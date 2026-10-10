@@ -204,6 +204,40 @@ int main(void)
     tap_center(a, 40, H / 2);                  /* 上一页 */
     step(a, "阅读 P3(上一页)", "/tmp/11-reader-prev.ppm");
 
+    /* 5.5) 翻页行点击：左右键必须真的翻页（此前被 enabled 缓存卡死） */
+    {
+        int sw, sh, wc, rh, cols, rows, bx, by, bary;
+        unsigned long long h0, h1, h2;
+        int i2;
+        rf_app_metrics(a, &sw, &sh, &wc, &rh, &cols, &rows, &bx, &by, &bary);
+        rf_app_render(a, fb, W, H);
+        h0 = 0; for (i2 = 0; i2 < W * H; i2++) h0 = h0 * 131 + fb[i2];
+        rf_app_tap(a, W - 40, H - rh - 4);              /* 翻页行右键 → 下一页 */
+        rf_app_render(a, fb, W, H);
+        h1 = 0; for (i2 = 0; i2 < W * H; i2++) h1 = h1 * 131 + fb[i2];
+        rf_app_tap(a, 40, H - rh - 4);                  /* 翻页行左键 → 上一页 */
+        rf_app_render(a, fb, W, H);
+        h2 = 0; for (i2 = 0; i2 < W * H; i2++) h2 = h2 * 131 + fb[i2];
+        printf("  翻页键: 右键换页=%d 左键回退=%d\n", h1 != h0, h2 != h1);
+        printf("  判定: 翻页键可用=%d\n", (h1 != h0) && (h2 != h1));
+    }
+
+    /* 5.6) 目录：阅读底栏 [目录] → 目录页（扁平、含 # 原文）→ 点条目跳转回阅读 */
+    {
+        int sw, sh, wc, rh, cols, rows, bx, by, bary;
+        int b0, b1, b2;
+        rf_app_metrics(a, &sw, &sh, &wc, &rh, &cols, &rows, &bx, &by, &bary);
+        b0 = rf_app_book_id(a);
+        tap_bar(a, 0);                              /* 阅读底栏 [目录]（第 0 个按钮） */
+        rf_app_render(a, fb, W, H);
+        b1 = rf_app_book_id(a);
+        dump("/tmp/17-toc.ppm");
+        rf_app_tap(a, bx + wc, by + rh + rh / 2);   /* 点目录第 1 条 */
+        b2 = rf_app_book_id(a);
+        printf("  目录: 阅读=%d → 目录页=%d → 跳转后=%d\n", b0, b1, b2);
+        printf("  判定: 目录页与跳转=%d\n", (b0 == 1 && b1 == 7 && b2 == 1));
+    }
+
     /* 6) 设置语义回归：编辑只影响预览 → 保存 → 重启才生效 */
     {
         int wc0, rh0, wc1, rh1, wc2, rh2, wc3, rh3, wc4, rh4;

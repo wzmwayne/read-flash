@@ -126,6 +126,7 @@ typedef struct {
 
 typedef struct {
     int truncate_scroll;   /* 1 = 截断 + 行尾 … + 点击滚动（仅生成式书，v3.4.1） */
+    int parse_titles;      /* 1 = 解析 # 标题；0 = 按普通文本渲染（目录页用） */
 } RfMode;
 
 /* --- 渲染行迭代器（逐渲染行前进，供翻页与回溯共用） --- */
@@ -272,6 +273,7 @@ int  rf_progress_load(RfStore *st, const char *id, u64 *line, u64 *off);
 #define RF_BOOK_TUTORIAL 4
 #define RF_BOOK_DIALOG   5
 #define RF_BOOK_IMPORT   6
+#define RF_BOOK_TOC      7
 
 typedef struct RfApp RfApp;
 

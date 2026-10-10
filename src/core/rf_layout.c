@@ -119,7 +119,7 @@ int rf_iter_block(RfIter *it, u8 *term)
             *term |= RF_TERM_FORCED;
             return -1;
         }
-        span = detect_title(it->d->data + it->pos, llen, &kind, &num, &den);
+        span = it->m->parse_titles ? detect_title(it->d->data + it->pos, llen, &kind, &num, &den) : 0;
         it->kind = kind;
         it->block_rows = 0;
         it->block_left = 0;

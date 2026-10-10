@@ -222,6 +222,7 @@ static void check_determinism(Rpt *r, u64 len)
     RfSettings st;
     RfGrid g, g2;
     RfMode m;
+
     RfDoc d;
     RfPage pg1, pg2;
     int bad0 = r->fails, p1 = 0, p2 = 0, st1 = 0, st2 = 0;
@@ -229,6 +230,7 @@ static void check_determinism(Rpt *r, u64 len)
 
     rf_settings_default(&st);
     m.truncate_scroll = 0;
+    m.parse_titles = 1;
     rf_grid_build(&g, &st, FB_W, FB_H, 2000);
     rf_doc_init(&d, g_doc, len, 0);
 
@@ -366,12 +368,14 @@ static void check_bounds(Rpt *r, const char *name, const char *text)
     RfSettings st;
     RfGrid g;
     RfMode m;
+
     RfDoc d;
     RfPage pg;
     u64 len = (u64)strlen(text);
 
     rf_settings_default(&st);
     m.truncate_scroll = 0;
+    m.parse_titles = 1;
     rf_grid_build(&g, &st, 320, 480, 1500);
     memcpy(g_doc, text, (size_t)len);
     rf_doc_init(&d, g_doc, len, rf_count_lines(g_doc, len));
@@ -396,6 +400,7 @@ int rf_selftest(char *out, size_t outsz)
     RfSettings st;
     RfGrid g;
     RfMode m;
+
     u64 len_main, len_single, len_nl;
     int pages = 0, stalled = 0, pv_checked = 0, pv_bad = 0;
     int bad0;
@@ -407,6 +412,7 @@ int rf_selftest(char *out, size_t outsz)
 
     rf_settings_default(&st);
     m.truncate_scroll = 0;
+    m.parse_titles = 1;
     rf_grid_build(&g, &st, FB_W, FB_H, 2000);
 
     rp(&r, "Read-Flash 最小验证（§16）  网格 %dx%d d=2000 字号 %ddp 行高自动 ×%d.%d\n",
@@ -462,6 +468,7 @@ int rf_selftest(char *out, size_t outsz)
         RfSettings st2;
         RfGrid g2;
         RfMode m2;
+
         RfDoc d2;
         RfPage pg2;
         RfRow rr[RF_MAX_ROWS];
@@ -470,6 +477,7 @@ int rf_selftest(char *out, size_t outsz)
         int i2, bad0 = r.fails;
         rf_settings_default(&st2);
         m2.truncate_scroll = 0;
+        m2.parse_titles = 1;
         rf_grid_build(&g2, &st2, 720, 1280, 2000);
         memcpy(g_doc, DOC, strlen(DOC));
         rf_doc_init(&d2, g_doc, strlen(DOC), rf_count_lines(g_doc, strlen(DOC)));

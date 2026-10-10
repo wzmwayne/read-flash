@@ -6,6 +6,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <limits.h>
 #include <dirent.h>
 #include <limits.h>
 #include <strings.h>
@@ -18,6 +19,7 @@
 #define C_DIS    0x4208
 #define C_DIM    0x632C          /* #666666 次要信息 */
 #define C_WHITE  0xFFFF          /* #FFFFFF 可用翻页键 */
+#define C_ORANGE 0xFC00          /* #FF8800 正在读的章节 */
 #define C_ACC    0xFFE0
 #define C_DANGER 0xF9C8
 #define C_SEP    0x2945
@@ -28,6 +30,7 @@ enum {
     ACT_ML_DN, ACT_ML_UP, ACT_MT_DN, ACT_MT_UP, ACT_LH_DN, ACT_LH_UP, ACT_LH_AUTO, ACT_LIVE,
     ACT_PREVIEW, ACT_SAVE, ACT_DEBUG, ACT_REBUILD, ACT_RESET, ACT_SETTINGS,
     ACT_PAGE_PREV, ACT_PAGE_NEXT, ACT_SELECT, ACT_IMP_CANCEL, ACT_IMP_DO, ACT_IMP_PICK, ACT_IMP_TOGGLE,
+    ACT_TOC_JUMP, ACT_TOC,
     ACT_DLG_OK, ACT_DLG_CANCEL, ACT_BACK
 };
 
@@ -84,6 +87,11 @@ struct RfApp {
     char dlg[192];
     int dlg_active, dlg_action, dlg_kind;   /* dlg_kind: 0=信息提示, 1=删除确认 */
     int sel_hit_row;                        /* 正文带命中行（ACT_SELECT 用） */
+    int toc_n;                              /* 目录：标题条目数（扁平，文件顺序） */
+    u64 toc_line[256];
+    char toc_txt[256][120];
+    u8  toc_seen[32];                       /* 每章 1 bit：曾经到达过（已读） */
+    int toc_dirty;
     int imp_n;                              /* 导入页面：可导入文件数 */
     int imp_checked[64];
     char imp_name[64][128];
@@ -134,6 +142,11 @@ static RfComp *comp_find(RfApp *a, int band, int row, int col)
         if (col >= c->c0 && col < c->c1) return c;
     }
     return NULL;
+}
+
+static void book_path_join(char *dst, size_t cap, const char *root, const char *id, const char *name)
+{
+    snprintf(dst, cap, "%s/book/%s/%s", root, id, name);
 }
 
 static void ginit(RfApp *a)
@@ -469,6 +482,112 @@ static void gen_import(RfApp *a)
     a->data_len = a->gen_len;
 }
 
+/* 从 .config 读目录（导入时已扫描好：条目 = 任意层级的 # 标题，扁平顺序） */
+static void load_toc(RfApp *a, const char *id)
+{
+    char path[700];
+    FILE *f;
+    char line[512];
+    int ln = 0, i;
+    a->toc_n = 0;
+    book_path_join(path, sizeof path, a->st->root, id, ".config");
+    f = fopen(path, "r");
+    if (!f) return;
+    while (fgets(line, sizeof line, f)) {
+        ln++;
+        if (ln >= 7 && a->toc_n < 256) {                 /* 第 7 行起为目录条目 */
+            char *sp = strchr(line, ' ');
+            size_t n;
+            if (!sp) break;
+            a->toc_line[a->toc_n] = strtoull(line, NULL, 16);
+            sp++;
+            n = strlen(sp);
+            while (n > 0 && (sp[n-1] == '\n' || sp[n-1] == '\r')) sp[--n] = 0;
+            if (n >= sizeof a->toc_txt[0]) n = sizeof a->toc_txt[0] - 1;
+            memcpy(a->toc_txt[a->toc_n], sp, n);
+            a->toc_txt[a->toc_n][n] = 0;
+            a->toc_n++;
+        }
+    }
+    fclose(f);
+    /* 访问位 */
+    memset(a->toc_seen, 0, sizeof a->toc_seen);
+    book_path_join(path, sizeof path, a->st->root, id, ".read");
+    f = fopen(path, "r");
+    if (f) {
+        char magic[16], bits[80];
+        int k;
+        if (fscanf(f, "%15s %79s", magic, bits) == 2 && strncmp(magic, "RFREAD001", 9) == 0) {
+            for (k = 0; k < 32 && bits[k * 2] && bits[k * 2 + 1]; k++) {
+                int hi = bits[k*2] <= '9' ? bits[k*2]-'0' : (bits[k*2]|32)-'a'+10;
+                int lo = bits[k*2+1] <= '9' ? bits[k*2+1]-'0' : (bits[k*2+1]|32)-'a'+10;
+                a->toc_seen[k] = (u8)((hi << 4) | lo);
+            }
+        }
+        fclose(f);
+    }
+    (void)i;
+}
+
+static void save_toc_seen(RfApp *a)
+{
+    char path[700], buf[256];
+    size_t off = 0;
+    int k;
+    FILE *f;
+    if (!a->toc_dirty) return;
+    off += (size_t)snprintf(buf + off, sizeof buf - off, "RFREAD001\n");
+    for (k = 0; k < 32; k++) off += (size_t)snprintf(buf + off, sizeof buf - off, "%02X", a->toc_seen[k]);
+    off += (size_t)snprintf(buf + off, sizeof buf - off, "\n%08X\n", rf_crc32((const u8 *)buf, off));
+    book_path_join(path, sizeof path, a->st->root, a->id, ".read");
+    f = fopen(path, "wb");
+    if (f) { fwrite(buf, 1, off, f); fclose(f); }
+    a->toc_dirty = 0;
+}
+
+/* 当前章节 = 最后一个行号 <= 当前页首行的条目 */
+static int cur_chapter(const RfApp *a)
+{
+    int i, c = -1;
+    for (i = 0; i < a->toc_n; i++) if (a->toc_line[i] <= a->line) c = i;
+    return c;
+}
+
+static void mark_chapter(RfApp *a)
+{
+    int c = cur_chapter(a);
+    if (c < 0 || c >= 256) return;
+    if (!(a->toc_seen[c >> 3] & (1u << (c & 7)))) {
+        a->toc_seen[c >> 3] |= (u8)(1u << (c & 7));
+        a->toc_dirty = 1;
+        save_toc_seen(a);
+    }
+}
+
+/* 目录页：扁平列出所有标题，直接渲染原文（含 # 号，不套标题样式）；点击跳转 */
+static void gen_toc(RfApp *a)
+{
+    int i, cur = cur_chapter(a);
+    char id[24];
+    ginit(a);
+    if (a->toc_n == 0) {
+        gputs(a, "（这本书没有 # 标题，无法生成目录）\n");
+    } else {
+        for (i = 0; i < a->toc_n; i++) {
+            u16 fg = (i == cur) ? C_ORANGE
+                   : ((a->toc_seen[i >> 3] & (1u << (i & 7))) ? C_DIM : C_TEXT);
+            int row = grow(a), c0 = gcol(a);
+            gputs(a, a->toc_txt[i]);
+            gputs(a, "\n");
+            snprintf(id, sizeof id, "toc.item.%d", i);
+            comp_reg(a, id, RF_BAND_BODY, row, c0, c0 + 40, ACT_TOC_JUMP, RF_C_RADIO,
+                     i == cur, 1, fg, fg);
+        }
+    }
+    a->data = (const u8 *)a->gen;
+    a->data_len = a->gen_len;
+}
+
 static void gen_library(RfApp *a)
 {
     int i;
@@ -517,6 +636,9 @@ static void set_bar(RfApp *a)
         bar_add(a, ACT_PREVIEW, "预览");
         bar_add(a, ACT_SAVE, "保存");
         bar_add(a, ACT_DEBUG, "调试");
+        break;
+    case RF_BOOK_READER:
+        bar_add(a, ACT_TOC, "目录");
         break;
     case RF_BOOK_DEBUG:
         bar_add(a, ACT_REBUILD, "重建索引");
@@ -574,6 +696,7 @@ static void load_reader(RfApp *a, const char *id)
             a->off = po <= len ? po : 0;
         }
     }
+    load_toc(a, id);
     /* 标题 */
     {
         RfBookEnt e;
@@ -603,6 +726,8 @@ static void book_leave(RfApp *a)
 /* 打开某本书的显示状态（不动栈） */
 static void open_book(RfApp *a, int book)
 {
+    a->ncomp = 0;                /* 换书即清空组件注册表：避免上一本书的组件残留 */
+    a->comp_dup = 0;
     a->book = book;
     a->line = 1;
     a->off = 0;
@@ -618,6 +743,7 @@ static void open_book(RfApp *a, int book)
         snprintf(a->title, sizeof a->title, "设置");
         break;
     case RF_BOOK_DEBUG:    gen_debug(a);    snprintf(a->title, sizeof a->title, "调试"); break;
+    case RF_BOOK_TOC:      gen_toc(a); snprintf(a->title, sizeof a->title, "目录"); break;
     case RF_BOOK_IMPORT:   scan_import_dir(a); gen_import(a);
                            snprintf(a->title, sizeof a->title, "导入"); break;
     case RF_BOOK_DIALOG:   gen_dialog(a);   snprintf(a->title, sizeof a->title, "提示"); break;
@@ -630,6 +756,7 @@ static void open_book(RfApp *a, int book)
 static void layout(RfApp *a)
 {
     RfDoc d;
+    a->mode.parse_titles = (a->book != RF_BOOK_TOC);   /* 目录页按原文渲染 # */
     if (!a->data) { a->laid = 0; return; }
     rf_doc_init(&d, a->data, a->data_len, rf_count_lines(a->data, a->data_len));
     rf_page_layout(&d, &a->g, &a->mode, a->off, a->line ? a->line : 1, &a->page, a->rows);
@@ -642,7 +769,10 @@ static void page_next(RfApp *a)
     a->off = a->page.next_off;
     a->line = a->page.next_line;
     layout(a);
-    if (a->book == RF_BOOK_READER) rf_progress_save(a->st, a->id, a->line, a->off, a->data_len);
+    if (a->book == RF_BOOK_READER) {
+        rf_progress_save(a->st, a->id, a->line, a->off, a->data_len);
+        mark_chapter(a);
+    }
     rf_glyph_reset();
     update_system_comps(a);
 }
@@ -907,6 +1037,23 @@ static void do_action(RfApp *a, int act)
         }
         return;
     case ACT_SETTINGS: stack_push(a, RF_BOOK_SETTINGS); return;
+    case ACT_TOC:       stack_push(a, RF_BOOK_TOC); return;
+    case ACT_TOC_JUMP: {
+        int idx = a->sel_hit_row - 1;               /* 目录条目一行一个 */
+        if (idx >= 0 && idx < a->toc_n) {
+            a->line = a->toc_line[idx];
+            a->off = rf_index_locate(&a->ix, a->data, 0, a->line);
+            if (a->ix.N == 0) a->off = 0;
+            if (a->toc_seen[idx >> 3] & (1u << (idx & 7))) { /* 已读不变 */ }
+            a->toc_seen[idx >> 3] |= (u8)(1u << (idx & 7));
+            a->toc_dirty = 1;
+            save_toc_seen(a);
+            a->laid = 0;
+            rf_progress_save(a->st, a->id, a->line, a->off, a->data_len);
+            stack_pop(a);                            /* 出栈回阅读书并重排 */
+        }
+        return;
+    }
     case ACT_PAGE_PREV: page_prev(a); update_system_comps(a); return;
     case ACT_PAGE_NEXT: page_next(a); update_system_comps(a); return;
     case ACT_SELECT: {
@@ -1075,7 +1222,7 @@ void rf_app_tap(RfApp *a, int x, int y)
     int i;
     if (y >= a->g.top_bar.y && y < a->g.top_bar.y + a->g.top_bar.h) {   /* 顶栏 */
         RfComp *c = comp_find(a, RF_BAND_TOP, 0, (x - a->g.top_bar.x) / a->g.wc);
-        if (c && c->enabled) do_action(a, c->act);
+        if (c) do_action(a, c->act);             /* 守卫在 page_prev/page_next 内，避免状态缓存过期 */
         return;
     }
     if (y >= a->g.btn_bar.y && y < a->g.btn_bar.y + a->g.btn_bar.h) {
@@ -1092,13 +1239,14 @@ void rf_app_tap(RfApp *a, int x, int y)
         else if (x > a->g.pager_bar.x + a->g.pager_bar.w - zone)
             c = comp_find(a, RF_BAND_PAGER, 0, a->g.cols > 2 ? a->g.cols - 2 : 0);
         else c = NULL;
-        if (c && c->enabled) do_action(a, c->act);
+        if (c) do_action(a, c->act);             /* 守卫在 page_prev/page_next 内，避免状态缓存过期 */
         return;
     }
     /* 正文 */
     if (a->book == RF_BOOK_READER || a->book == RF_BOOK_TUTORIAL) {
         if (x < a->g.body.x + a->g.body.w / 2) page_prev(a);
         else page_next(a);
+        update_system_comps(a);      /* 翻页后刷新翻页键可用状态（避免缓存过期导致点不动） */
         return;
     }
     {
