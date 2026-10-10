@@ -103,7 +103,12 @@ int main(void)
 
     rf_store_init(&st, "/tmp/rfapp");
     rf_settings_load(&st);
-    rf_glyph_set_provider(rf_glyph_builtin, NULL);
+    if (rf_glyph_ft_init(NULL, 0) == 0) {
+        rf_glyph_set_provider(rf_glyph_ft, NULL);      /* 真字形：能看到真实文字 */
+    } else {
+        rf_glyph_set_provider(rf_glyph_builtin, NULL);
+        printf("!! 未找到可用中文字体，退回占位方块（设 RF_FONT 指定字体）\n");
+    }
     rf_grid_build(&grid, &st.settings, W, H, DENS);
     a = rf_app_create(&st, W, H, DENS);
 

@@ -202,7 +202,11 @@ typedef int (*RfGlyphFn)(void *ud, u32 cp, int px, u8 *alpha, int cap, int *gw, 
 void rf_glyph_set_provider(RfGlyphFn fn, void *ud);
 void rf_glyph_reset(void);
 int  rf_glyph_get(u32 cp, int px, const u8 **alpha, int *w, int *h);
-/* 内置 8x16 ASCII 位图字体（宿主预览/无平台字体时使用）；超出范围的码点返回方框。 */
+/* 宿主验证用：FreeType + 真字体（文泉驿等宽正黑优先，可用 RF_FONT 覆盖） */
+int  rf_glyph_ft_init(const char *path, int face_index);
+int  rf_glyph_ft(void *ud, u32 cp, int px, u8 *alpha, int cap, int *gw, int *gh);
+
+/* 内置占位字体（仅当没有真字体时使用）；画描边方块。 */
 int  rf_glyph_builtin(void *ud, u32 cp, int px, u8 *alpha, int cap, int *gw, int *gh);
 
 /* ---------------- 存储（§4.1 设置、§9 存储格式） ---------------- */

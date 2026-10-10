@@ -48,9 +48,12 @@ docs/            规范与评审文档
 ### 1) 宿主验证（无需安卓，几秒出结果）
 
 ```bash
-gcc -O2 -std=c99 -Isrc/core -o build/host/rf_verify src/core/*.c src/host/main.c
-./build/host/rf_verify        # 期望最后一行：RESULT: PASS (失败 0)
+./tools/build_host.sh verify   # 自检：期望 RESULT: PASS (失败 0)
+./tools/build_host.sh demo     # 端到端演示，导出真字形画面 build/host/frames.png
 ```
+
+> **验证必须带字体**：`demo` 用 FreeType + 真字体（默认文泉驿等宽正黑，`RF_FONT` 可覆盖）渲染，
+> 否则只会画占位方块，**错字、断行、标点问题都看不出来**。没有字体时脚本会明确告警。
 
 ### 2) 安卓 APK（全离线，只用本机已装的 SDK/NDK）
 
