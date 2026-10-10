@@ -232,6 +232,15 @@ int main(void)
         rf_app_render(a, fb, W, H);
         b1 = rf_app_book_id(a);
         dump("/tmp/17-toc.ppm");
+        {   /* 目录页翻页键：多章节时必须能翻页 */
+            unsigned long long t0 = 0, t1 = 0;
+            int j;
+            for (j = 0; j < W * H; j++) t0 = t0 * 131 + fb[j];
+            rf_app_tap(a, W - 40, H - rh - 4);      /* 翻页行右键 */
+            rf_app_render(a, fb, W, H);
+            for (j = 0; j < W * H; j++) t1 = t1 * 131 + fb[j];
+            printf("  目录翻页键: 单页目录右键无动作=符合预期(%d)\n", t1 == t0);
+        }
         rf_app_tap(a, bx + wc, by + rh + rh / 2);   /* 点目录第 1 条 */
         b2 = rf_app_book_id(a);
         printf("  目录: 阅读=%d → 目录页=%d → 跳转后=%d 条目数=%d 命中动作=%d\n",

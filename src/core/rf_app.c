@@ -683,11 +683,13 @@ static void gen_library(RfApp *a)
         snprintf(id, sizeof id, "lib.item.%d", i);
         gitem(a, id, ACT_SELECT, i == a->sel, t);
         {   /* 右侧显示阅读进度 */
-            int pct = -1;
+            int pct = 0;                        /* 没读过就是 0%（不显示空白） */
             if (i > 0) {
                 u64 pl = 0, po = 0;
-                if (rf_progress_load(a->st, a->books[i - 1].id, &pl, &po) == 0 && a->books[i - 1].lines > 0)
-                    pct = (int)(pl * 100ull / (u64)a->books[i - 1].lines);
+                if (a->books[i - 1].lines > 0) {
+                    if (rf_progress_load(a->st, a->books[i - 1].id, &pl, &po) == 0)
+                        pct = (int)(pl * 100ull / (u64)a->books[i - 1].lines);
+                }
             } else {
                 pct = 100;                      /* 内置教程视为已读 */
             }
@@ -1124,6 +1126,7 @@ int rf_app_render(RfApp *a, u16 *fb, int fw, int fh)
     /* 底栏下行：翻页行（左 <，右 >） */
     fill(fb, fw, fh, a->g.pager_bar.x, a->g.pager_bar.y, a->g.pager_bar.w, 1, C_SEP);
     {
+        update_system_comps(a);          /* 每帧按当前页刷新翻页键可用状态（不再用缓存） */
         RfComp *kp = comp_find(a, RF_BAND_PAGER, 0, 0);
         RfComp *kn = comp_find(a, RF_BAND_PAGER, 0, a->g.cols > 2 ? a->g.cols - 2 : 0);
         u16 cprev = kp ? kp->fg_label : C_DIS;
