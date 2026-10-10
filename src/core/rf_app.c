@@ -26,11 +26,29 @@ enum {
     ACT_FONT_DN, ACT_FONT_UP, ACT_SP_DN, ACT_SP_UP,
     ACT_ML_DN, ACT_ML_UP, ACT_MT_DN, ACT_MT_UP, ACT_LH_DN, ACT_LH_UP, ACT_LH_AUTO, ACT_LIVE,
     ACT_PREVIEW, ACT_SAVE, ACT_DEBUG, ACT_REBUILD, ACT_RESET, ACT_SETTINGS,
+    ACT_PAGE_PREV, ACT_PAGE_NEXT, ACT_SELECT,
     ACT_DLG_OK, ACT_DLG_CANCEL, ACT_BACK
 };
 
-#define HIT_BODY_MAX 32
-#define HIT_BAR_MAX  12
+/* 组件注册表：所有可交互组件都在此登记（唯一 id）。
+ * 渲染配色与命中判定**都查这张表**，不做文本模式匹配。 */
+#define RF_COMP_MAX 64
+#define RF_BAND_TOP   0
+#define RF_BAND_BODY  1
+#define RF_BAND_BTN   2
+#define RF_BAND_PAGER 3
+
+#define RF_C_BTN   0
+#define RF_C_RADIO 1
+#define RF_C_CHECK 2
+
+typedef struct {
+    char id[20];
+    int band, row;          /* 正文带 row = 1-based 文本行 */
+    int c0, c1;             /* 半角列区间 [c0, c1) */
+    int act, kind, on, enabled;
+    u16 fg_marker, fg_label;
+} RfComp;
 
 struct RfApp {
     RfStore *st;
@@ -64,20 +82,59 @@ struct RfApp {
 
     char dlg[192];
     int dlg_active, dlg_action, dlg_kind;   /* dlg_kind: 0=信息提示, 1=删除确认 */
+    int sel_hit_row;                        /* 正文带命中行（ACT_SELECT 用） */
 
     char bar[192];
-    struct { int row, c0, c1, act; } hb[HIT_BODY_MAX];
-    int nhb;
-    struct { int x0, x1, act; } hk[HIT_BAR_MAX];
-    int nhk;
+    RfComp comp[RF_COMP_MAX];
+    int ncomp;
+    int comp_dup;                              /* 注册到重复 id 的次数（自检用） */
 };
 
 /* ---------------- 生成式书内容 ---------------- */
 
+/* 注册一个组件；重复 id 会被拒绝并计数（自检会报） */
+static RfComp *comp_reg(RfApp *a, const char *id, int band, int row, int c0, int c1,
+                        int act, int kind, int on, int enabled,
+                        u16 fg_marker, u16 fg_label)
+{
+    int i;
+    RfComp *c;
+    for (i = 0; i < a->ncomp; i++) {
+        if (strcmp(a->comp[i].id, id) == 0) {
+            if (a->comp[i].act != act) a->comp_dup++;      /* 同 id 不同动作 = 真冲突 */
+            a->comp[i].row = row; a->comp[i].c0 = c0; a->comp[i].c1 = c1;
+            a->comp[i].kind = kind; a->comp[i].on = on; a->comp[i].enabled = enabled;
+            a->comp[i].fg_marker = fg_marker; a->comp[i].fg_label = fg_label;
+            return &a->comp[i];
+        }
+    }
+    if (a->ncomp >= RF_COMP_MAX) { a->comp_dup++; return NULL; }
+    c = &a->comp[a->ncomp++];
+    snprintf(c->id, sizeof c->id, "%s", id);
+    c->band = band; c->row = row; c->c0 = c0; c->c1 = c1;
+    c->act = act; c->kind = kind; c->on = on; c->enabled = enabled;
+    c->fg_marker = fg_marker; c->fg_label = fg_label;
+    return c;
+}
+
+/* 按带 + 行 + 列查组件（命中判定唯一入口） */
+static RfComp *comp_find(RfApp *a, int band, int row, int col)
+{
+    int i;
+    for (i = 0; i < a->ncomp; i++) {
+        RfComp *c = &a->comp[i];
+        if (c->band != band) continue;
+        if (band == RF_BAND_BODY && c->row != row) continue;
+        if (col >= c->c0 && col < c->c1) return c;
+    }
+    return NULL;
+}
+
 static void ginit(RfApp *a)
 {
     a->gen_len = 0;
-    a->nhb = 0;                       /* 仅正文命中表随内容重建；底栏由 set_bar 维护 */
+    a->ncomp = 0;
+    a->comp_dup = 0;
     if (a->gen && a->gen_cap) a->gen[0] = 0;
 }
 
@@ -121,25 +178,50 @@ static int gcol(RfApp *a)
     return cols;
 }
 
-/* 正文按钮：[label]，记录命中框（行, 列区间, 动作） */
-static void gbtn(RfApp *a, int act, const char *label)
+/* 正文按钮组件：写入 [label] 文本并登记组件（id 必填） */
+static void gbtn_id(RfApp *a, const char *id, int act, const char *label)
 {
-    if (a->nhb < HIT_BODY_MAX) {
-        a->hb[a->nhb].row = grow(a);
-        a->hb[a->nhb].c0 = gcol(a);
-        a->hb[a->nhb].c1 = a->hb[a->nhb].c0 + (int)strlen(label) + 2;
-        a->hb[a->nhb].act = act;
-        a->nhb++;
-    }
+    int row = grow(a), c0 = gcol(a);
+    int c1 = c0 + (int)strlen(label) + 2;
+    comp_reg(a, id, RF_BAND_BODY, row, c0, c1, act, RF_C_BTN, 0, 1, C_BTN, C_BTN);
     gputs(a, "[");
     gputs(a, label);
     gputs(a, "]");
 }
 
+/* 兼容旧调用：自动生成 id */
+static void gbtn(RfApp *a, int act, const char *label)
+{
+    char id[20];
+    snprintf(id, sizeof id, "btn.%d.%d", grow(a), gcol(a));
+    gbtn_id(a, id, act, label);
+}
+
+/* 多选组件：(-)/(+) + 标签 */
+static void gcheck(RfApp *a, const char *id, int act, int on, const char *label)
+{
+    int row = grow(a), c0 = gcol(a);
+    gputs(a, on ? "(+)" : "(-)");
+    gputs(a, label);
+    comp_reg(a, id, RF_BAND_BODY, row, c0, c0 + (int)strlen(label) + 3,
+             act, RF_C_CHECK, on, 1, on ? C_ACC : C_TEXT, C_TEXT);
+}
+
+/* 单选行组件（书库条目） */
+static void gitem(RfApp *a, const char *id, int act, int on, const char *label)
+{
+    int row = grow(a), c0 = gcol(a);
+    gputs(a, on ? "(>)" : "( )");
+    gputs(a, label);
+    comp_reg(a, id, RF_BAND_BODY, row, c0, c0 + (int)strlen(label) + 3,
+             act, RF_C_RADIO, on, 1, on ? C_ACC : C_TEXT, C_TEXT);
+}
+
 /* 底栏按钮行 */
 static void bar_add(RfApp *a, int act, const char *label)
 {
-    int col = 0;
+    int col = 0, c0, c1;
+    char id[20];
     {
         size_t i = strlen(a->bar);
         int cols = 0;
@@ -153,12 +235,10 @@ static void bar_add(RfApp *a, int act, const char *label)
         }
         col = cols;
     }
-    if (a->nhk < HIT_BAR_MAX) {
-        a->hk[a->nhk].x0 = col * a->g.wc;
-        a->hk[a->nhk].x1 = (col + (int)strlen(label) + 2) * a->g.wc;
-        a->hk[a->nhk].act = act;
-        a->nhk++;
-    }
+    c0 = col;
+    c1 = col + (int)strlen(label) + 2;
+    snprintf(id, sizeof id, "bar.%d", a->ncomp);
+    comp_reg(a, id, RF_BAND_BTN, 0, c0, c1, act, RF_C_BTN, 0, 1, C_BTN, C_BTN);
     strncat(a->bar, "[", sizeof a->bar - strlen(a->bar) - 1);
     strncat(a->bar, label, sizeof a->bar - strlen(a->bar) - 1);
     strncat(a->bar, "]  ", sizeof a->bar - strlen(a->bar) - 1);
@@ -231,16 +311,7 @@ static void gen_settings(RfApp *a)
         gputs(a, "      （dp，12 - 48）\n\n");
 
         gputs(a, "行高\n");
-        gputs(a, s->lh_auto ? "(+)自动" : "(-)自动");
-        {
-            if (a->nhb < HIT_BODY_MAX) {
-                a->hb[a->nhb].row = grow(a);
-                a->hb[a->nhb].c0 = 0;
-                a->hb[a->nhb].c1 = 8;
-                a->hb[a->nhb].act = ACT_LH_AUTO;
-                a->nhb++;
-            }
-        }
+        gcheck(a, "set.lh.auto", ACT_LH_AUTO, s->lh_auto, "自动");
         gputs(a, "（行容器的倍数）\n");
         gbtn(a, ACT_LH_DN, "-");
         gputs(a, " ");
@@ -272,16 +343,7 @@ static void gen_settings(RfApp *a)
         gbtn(a, ACT_MT_UP, "+");
         gputs(a, "      （dp，0 - 64）\n\n");
 
-        gputs(a, s->live_edit ? "(+)实时修改" : "(-)实时修改");
-        {
-            if (a->nhb < HIT_BODY_MAX) {
-                a->hb[a->nhb].row = grow(a);
-                a->hb[a->nhb].c0 = 0;
-                a->hb[a->nhb].c1 = 10;
-                a->hb[a->nhb].act = ACT_LIVE;
-                a->nhb++;
-            }
-        }
+        gcheck(a, "set.live", ACT_LIVE, s->live_edit, "实时修改");
         gputs(a, "\n\n");
         gputs(a, s->live_edit
                  ? "实时修改已开：调整立即生效（本次会话）。\n"
@@ -347,12 +409,13 @@ static void gen_dialog(RfApp *a)
 static void gen_library(RfApp *a)
 {
     int i;
+    char id[20];
     ginit(a);
     /* 书库单选组只列书：内置《应用使用教程》+ 导入的书；设置/调试在底栏按钮 */
     for (i = 0; i <= a->nbooks; i++) {
         const char *t = (i == 0) ? "应用使用教程" : a->books[i - 1].title;
-        gputs(a, (i == a->sel) ? "(>)" : "( )");
-        gputs(a, t);
+        snprintf(id, sizeof id, "lib.item.%d", i);
+        gitem(a, id, ACT_SELECT, i == a->sel, t);
         gputs(a, "\n\n");
     }
     a->data = (const u8 *)a->gen;
@@ -361,10 +424,22 @@ static void gen_library(RfApp *a)
 
 /* ---------------- 书与导航 ---------------- */
 
+/* 系统按键（固定 id）：顶栏返回、翻页行左右键 */
+static void update_system_comps(RfApp *a)
+{
+    int cols = a->g.cols;
+    int cp = a->laid && rf_can_prev(&a->page);
+    int cn = a->laid && rf_can_next(&a->page);
+    comp_reg(a, "nav_back",   RF_BAND_TOP,   0, 0, 2, ACT_BACK, RF_C_BTN, 0, 1, C_TITLE, C_TITLE);
+    comp_reg(a, "page_prev",  RF_BAND_PAGER, 0, 0, 2, ACT_PAGE_PREV, RF_C_BTN, 0, cp,
+             cp ? C_WHITE : C_DIS, cp ? C_WHITE : C_DIS);
+    comp_reg(a, "page_next",  RF_BAND_PAGER, 0, cols > 2 ? cols - 2 : 0, cols,
+             ACT_PAGE_NEXT, RF_C_BTN, 0, cn, cn ? C_WHITE : C_DIS, cn ? C_WHITE : C_DIS);
+}
+
 static void set_bar(RfApp *a)
 {
     a->bar[0] = 0;
-    a->nhk = 0;
     switch (a->book) {
     case RF_BOOK_LIBRARY:
         bar_add(a, ACT_OPEN, "打开");
@@ -389,6 +464,7 @@ static void set_bar(RfApp *a)
     default:
         break;
     }
+    update_system_comps(a);                     /* 顶栏返回 + 翻页行左右键（固定 id） */
 }
 
 static void load_reader(RfApp *a, const char *id)
@@ -496,6 +572,7 @@ static void page_next(RfApp *a)
     layout(a);
     if (a->book == RF_BOOK_READER) rf_progress_save(a->st, a->id, a->line, a->off, a->data_len);
     rf_glyph_reset();
+    update_system_comps(a);
 }
 
 static void page_prev(RfApp *a)
@@ -510,6 +587,7 @@ static void page_prev(RfApp *a)
         a->page = pp;
         if (a->book == RF_BOOK_READER) rf_progress_save(a->st, a->id, a->line, a->off, a->data_len);
         rf_glyph_reset();
+        update_system_comps(a);
     } else {
         a->off = 0;
         a->line = 1;
@@ -606,12 +684,11 @@ static void blend(u16 *fb, int fw, int fh, const u8 *alpha, int gw, int gh, int 
 /* 画一行文本；unit = 每个半角列的像素宽 = wc * num / den；px = 字号像素 */
 static int draw_text(RfApp *a, u16 *fb, int fw, int fh, const u8 *s, u64 n,
                      int x0, int y, int px, int unit_num, int unit_den,
-                     u16 base, int max_cols, int has_marker, int boxh, int bold, int top_align)
+                     u16 base, int max_cols, int band, int text_row, int boxh, int bold, int top_align)
 {
     u64 i = 0;
-    int col = 0, marker = 0;
+    int col = 0;
     u16 color = base;
-    int in_btn = 0, in_dis = 0;
     int flags = bold ? RF_GLYPH_BOLD : 0;
 
     while (i < n && col < max_cols) {
@@ -622,15 +699,16 @@ static int draw_text(RfApp *a, u16 *fb, int fw, int fh, const u8 *s, u64 n,
         int gw = 0, gh = 0;
         int cx, cy;
         if (nb <= 0) break;
-        /* 行内样式（§5.5 生成式书组件语法） */
-        if (cp == '[') in_btn = 1;
-        if (cp == '{') in_dis = 1;
-        if (has_marker && col < 3) {
-            marker = 1;
-        } else {
-            marker = 0;
+        /* 配色**只来自组件注册表**：属于组件 → 用组件的颜色；否则用默认色 */
+        {
+            RfComp *c = comp_find(a, band, text_row, col);
+            if (c) {
+                color = (c->kind != RF_C_BTN && col < c->c0 + 3) ? c->fg_marker : c->fg_label;
+                if (!c->enabled) color = C_DIS;
+            } else {
+                color = base;
+            }
         }
-        color = in_btn ? C_BTN : (in_dis ? C_DIS : (marker ? C_ACC : base));
         if (!(cp == ' ' || cp == '\t')) {
             if (rf_glyph_get(cp, px, flags, &alpha, &gw, &gh)) {
                 int cellw = cc * a->g.wc * unit_num / unit_den;
@@ -641,8 +719,6 @@ static int draw_text(RfApp *a, u16 *fb, int fw, int fh, const u8 *s, u64 n,
                 blend(fb, fw, fh, alpha, gw, gh, cx, cy, color);
             }
         }
-        if (cp == ']') in_btn = 0;
-        if (cp == '}') in_dis = 0;
         col += cc;
         i += (u64)nb;
     }
@@ -659,10 +735,10 @@ int rf_app_render(RfApp *a, u16 *fb, int fw, int fh)
     {
         int ty = a->g.top_bar.y + (a->g.rh - a->g.rh) / 2;
         draw_text(a, fb, fw, fh, (const u8 *)"<", 1,
-                  a->g.top_bar.x, ty, a->g.fp, 1, 1, C_TITLE, 4, 0, a->g.rh, 0, 0);
+                  a->g.top_bar.x, ty, a->g.fp, 1, 1, C_TITLE, 4, RF_BAND_TOP, 0, a->g.rh, 0, 0);
         draw_text(a, fb, fw, fh, (const u8 *)a->title, strlen(a->title),
                   a->g.top_bar.x + 2 * a->g.wc, ty, a->g.fp, 1, 1,
-                  C_TITLE, a->g.cols - 6, 0, a->g.rh, 0, 0);
+                  C_TITLE, a->g.cols - 6, RF_BAND_TOP, 0, a->g.rh, 0, 0);
     }
     if (a->book == RF_BOOK_READER && a->data_len > 0) {
         char pb[16];
@@ -670,7 +746,7 @@ int rf_app_render(RfApp *a, u16 *fb, int fw, int fh)
         snprintf(pb, sizeof pb, "%llu%%", pct);
         draw_text(a, fb, fw, fh, (const u8 *)pb, strlen(pb),
                   a->g.top_bar.x + a->g.top_bar.w - (int)strlen(pb) * a->g.wc - a->g.wc,
-                  a->g.top_bar.y + (a->g.rh - a->g.rh) / 2, a->g.fp, 1, 1, C_DIM, 6, 0, a->g.rh, 0, 0);
+                  a->g.top_bar.y, a->g.fp, 1, 1, C_DIM, 6, RF_BAND_TOP, 0, a->g.rh, 0, 0);
     }
     fill(fb, fw, fh, a->g.top_bar.x, a->g.top_bar.y + a->g.rh - 1, a->g.top_bar.w, 1, C_SEP);
 
@@ -700,7 +776,7 @@ int rf_app_render(RfApp *a, u16 *fb, int fw, int fh)
                 }
                 draw_text(a, fb, fw, fh, a->data + p0, p1 - p0,
                           a->g.body.x, boxy, px, num, den, base, a->g.cols,
-                          a->book == RF_BOOK_LIBRARY ? 1 : 0, boxh, bold, top_align);
+                          RF_BAND_BODY, i + 1, boxh, bold, top_align);
             }
         }
     }
@@ -711,20 +787,22 @@ int rf_app_render(RfApp *a, u16 *fb, int fw, int fh)
         draw_text(a, fb, fw, fh, (const u8 *)a->bar, strlen(a->bar),
                   a->g.btn_bar.x + a->g.wc,
                   a->g.btn_bar.y + (a->g.rh - a->g.rh) / 2, a->g.fp, 1, 1,
-                  C_BTN, a->g.cols, 0, a->g.rh, 0, 0);
+                  C_BTN, a->g.cols, RF_BAND_BTN, 0, a->g.rh, 0, 0);
     /* 底栏下行：翻页行（左 <，右 >） */
     fill(fb, fw, fh, a->g.pager_bar.x, a->g.pager_bar.y, a->g.pager_bar.w, 1, C_SEP);
     {
-        u16 cprev = (a->laid && rf_can_prev(&a->page)) ? C_WHITE : C_DIS;   /* 可用=纯白 */
-        u16 cnext = (a->laid && rf_can_next(&a->page)) ? C_WHITE : C_DIS;   /* 不可用=深灰 */
+        RfComp *kp = comp_find(a, RF_BAND_PAGER, 0, 0);
+        RfComp *kn = comp_find(a, RF_BAND_PAGER, 0, a->g.cols > 2 ? a->g.cols - 2 : 0);
+        u16 cprev = kp ? kp->fg_label : C_DIS;
+        u16 cnext = kn ? kn->fg_label : C_DIS;
         const u8 *lt = (const u8 *)"<";
         const u8 *gt = (const u8 *)">";
         {
             int py = a->g.pager_bar.y + (a->g.rh - a->g.rh) / 2;
             draw_text(a, fb, fw, fh, lt, 1, a->g.pager_bar.x, py,
-                      a->g.fp, 1, 1, cprev, 4, 0, a->g.rh, 0, 0);
+                      a->g.fp, 1, 1, cprev, 4, RF_BAND_PAGER, 0, a->g.rh, 0, 0);
             draw_text(a, fb, fw, fh, gt, 1, a->g.pager_bar.x + a->g.pager_bar.w - a->g.wc,
-                      py, a->g.fp, 1, 1, cnext, 4, 0, a->g.rh, 0, 0);
+                      py, a->g.fp, 1, 1, cnext, 4, RF_BAND_PAGER, 0, a->g.rh, 0, 0);
         }
     }
     return 1;
@@ -748,6 +826,18 @@ static void do_action(RfApp *a, int act)
         }
         return;
     case ACT_SETTINGS: stack_push(a, RF_BOOK_SETTINGS); return;
+    case ACT_PAGE_PREV: page_prev(a); update_system_comps(a); return;
+    case ACT_PAGE_NEXT: page_next(a); update_system_comps(a); return;
+    case ACT_SELECT: {
+        int idx = (a->sel_hit_row - 1) / 2;      /* 每个条目占 2 个文本行 */
+        if (idx >= 0 && idx <= a->nbooks) {
+            a->sel = idx;
+            gen_library(a);
+            a->laid = 0;
+            set_bar(a);
+        }
+        return;
+    }
     case ACT_DELETE:
         if (a->sel >= 1 && a->sel - 1 < a->nbooks) {
             snprintf(a->dlg, sizeof a->dlg, "删除《%s》？\n此操作不可撤销。", a->books[a->sel - 1].title);
@@ -878,21 +968,26 @@ regrid:
 void rf_app_tap(RfApp *a, int x, int y)
 {
     int i;
-    if (y >= a->g.top_bar.y && y < a->g.top_bar.y + a->g.top_bar.h) {   /* 顶栏 < */
-        if (x < a->g.top_bar.x + a->g.wc * 4) do_action(a, ACT_BACK);
+    if (y >= a->g.top_bar.y && y < a->g.top_bar.y + a->g.top_bar.h) {   /* 顶栏 */
+        RfComp *c = comp_find(a, RF_BAND_TOP, 0, (x - a->g.top_bar.x) / a->g.wc);
+        if (c && c->enabled) do_action(a, c->act);
         return;
     }
     if (y >= a->g.btn_bar.y && y < a->g.btn_bar.y + a->g.btn_bar.h) {
-        for (i = 0; i < a->nhk; i++)
-            if (x >= a->hk[i].x0 && x < a->hk[i].x1) { do_action(a, a->hk[i].act); return; }
+        { RfComp *c = comp_find(a, RF_BAND_BTN, 0, (x - a->g.btn_bar.x) / a->g.wc);
+          if (c) do_action(a, c->act); }
         return;
     }
-    if (y >= a->g.pager_bar.y) {                 /* 翻页行：左 < 右 > */
+    if (y >= a->g.pager_bar.y) {                 /* 翻页行 */
         int zone = a->g.pager_bar.w * 20 / 100;
         int minzone = a->g.wc * 6;
+        RfComp *c;
         if (zone < minzone) zone = minzone;
-        if (x < a->g.pager_bar.x + zone) { page_prev(a); return; }
-        if (x > a->g.pager_bar.x + a->g.pager_bar.w - zone) { page_next(a); return; }
+        if (x < a->g.pager_bar.x + zone) c = comp_find(a, RF_BAND_PAGER, 0, 0);
+        else if (x > a->g.pager_bar.x + a->g.pager_bar.w - zone)
+            c = comp_find(a, RF_BAND_PAGER, 0, a->g.cols > 2 ? a->g.cols - 2 : 0);
+        else c = NULL;
+        if (c && c->enabled) do_action(a, c->act);
         return;
     }
     /* 正文 */
@@ -905,13 +1000,15 @@ void rf_app_tap(RfApp *a, int x, int y)
         int row = rf_app_row_at(a, y);
         int col = (x - a->g.body.x) / a->g.wc;
         if (row < 0) return;
-        for (i = 0; i < a->nhb; i++) {
-            if (a->hb[i].row == row + 1 && col >= a->hb[i].c0 && col < a->hb[i].c1) {
-                do_action(a, a->hb[i].act);
+        {
+            RfComp *c = comp_find(a, RF_BAND_BODY, row + 1, col);
+            if (c) {
+                a->sel_hit_row = row + 1;
+                do_action(a, c->act);
                 return;
             }
         }
-        if (a->book == RF_BOOK_LIBRARY) {        /* 单选行 */
+        if (0) {                                 /* 单选行已改为组件（ACT_SELECT） */
             int n = a->nbooks + 1;
             int idx = row / 2;
             if (idx >= 0 && idx < n) {
@@ -989,19 +1086,34 @@ void rf_app_metrics(const RfApp *a, int *sw, int *sh, int *wc, int *rh,
     if (bar_y) *bar_y = a->g.btn_bar.y;
 }
 
-int rf_app_bar_hit(const RfApp *a, int i, int *x)
-{
-    if (i < 0 || i >= a->nhk) return 0;
-    if (x) *x = (a->hk[i].x0 + a->hk[i].x1) / 2;
-    return a->hk[i].act;
-}
+/* 自检：重复/超限的组件 id 次数（应为 0） */
+int rf_app_comp_dups(const RfApp *a) { return a->comp_dup; }
 
 int rf_app_body_hit(const RfApp *a, int i, int *x, int *y)
 {
-    if (i < 0 || i >= a->nhb) return 0;
-    if (x) *x = a->g.body.x + (a->hb[i].c0 + a->hb[i].c1) / 2 * a->g.wc;
-    if (y) *y = a->g.body.y + (a->hb[i].row - 1) * a->g.rh + a->g.rh / 2;
-    return a->hb[i].act;
+    int n = 0, k;
+    for (k = 0; k < a->ncomp; k++) {
+        RfComp *c = &a->comp[k];
+        if (c->band != RF_BAND_BODY || c->act == ACT_SELECT) continue;
+        if (n++ != i) continue;
+        if (x) *x = a->g.body.x + (c->c0 + c->c1) / 2 * a->g.wc;
+        if (y) *y = a->g.body.y + (c->row - 1) * a->g.rh + a->g.rh / 2;
+        return c->act;
+    }
+    return 0;
+}
+
+int rf_app_bar_hit(const RfApp *a, int i, int *x)
+{
+    int n = 0, k;
+    for (k = 0; k < a->ncomp; k++) {
+        RfComp *c = &a->comp[k];
+        if (c->band != RF_BAND_BTN) continue;
+        if (n++ != i) continue;
+        if (x) *x = a->g.btn_bar.x + (c->c0 + c->c1) / 2 * a->g.wc;
+        return c->act;
+    }
+    return 0;
 }
 
 /* 调试/自检：当前页所有有内容行的字节区间是否都落在正文内 */

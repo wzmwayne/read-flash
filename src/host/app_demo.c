@@ -278,6 +278,18 @@ int main(void)
         tap_back(a);
     }
 
+    /* 6.10) 组件注册表：不得有重复 id（同 id 不同动作） */
+    {
+        int dups;
+        tap_back(a);                        /* 回书库 */
+        tap_bar(a, 3);                      /* [设置]：注册一堆组件 */
+        rf_app_render(a, fb, W, H);
+        dups = rf_app_comp_dups(a);
+        printf("  组件重复 id 次数=%d\n", dups);
+        printf("  判定: 组件 id 唯一=%d\n", dups == 0);
+        tap_back(a);
+    }
+
     /* 7) 退出并确认进度落盘 */
     rf_app_destroy(a);
     snprintf(cmd, sizeof cmd,
