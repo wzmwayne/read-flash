@@ -66,6 +66,19 @@ adb install -r build/readflash.apk
 脚本会逐工具探测（aapt2 / d8 / apksigner / zipalign / NDK clang），自动跳过宿主机无法执行的
 组件（例如 aarch64 主机上的 x86_64 预编译工具），全程**不下载任何东西**。
 
+## 版本规范
+
+`VERSION` 文件是唯一版本源，构建脚本注入 APK 的 `versionName` 与 `versionCode`：
+
+```
+<大版本>.<小版本><d|r><细碎修订>
+ 0.1          大功能更新、大的改动
+ .1           小功能更新、较严重 bug 修复
+ d / r        debug / release
+ 1            难以启齿的 bug 修复、细碎修改
+```
+当前版本：**0.1.1d1**（versionCode = 大*10000 + 小*100 + 次*10 + 修订）。
+
 ## 网络策略
 
 | 场景 | 方式 |

@@ -282,7 +282,7 @@ static void gen_debug(RfApp *a)
     gnum(a, (unsigned long long)a->g.cols);
     gputs(a, " 列 x ");
     gnum(a, (unsigned long long)a->g.rows);
-    gputs(a, " 行\n");
+    gputs(a, " 行\n版本       " RF_VERSION "\n");
     a->data = (const u8 *)a->gen;
     a->data_len = a->gen_len;
 }

@@ -18,6 +18,11 @@ typedef int64_t  i64;
 /* 一页最多支持的渲染行数（2400px / 19px ≈ 126） */
 #define RF_MAX_ROWS 160
 
+/* 版本号（由构建脚本注入 -DRF_VERSION，缺省值用于宿主构建） */
+#ifndef RF_VERSION
+#define RF_VERSION "0.1.1d1"
+#endif
+
 /* ---------------- 设置（§4.1） ---------------- */
 #define RF_FONT_DP_MIN       12
 #define RF_FONT_DP_MAX       48

@@ -105,6 +105,14 @@ else
 fi
 SYSROOT="$NDK/toolchains/llvm/prebuilt/$PRE/sysroot"
 
+# ---- 版本号（格式：大版本.小版本 + d/r + 细碎修订，例 0.1.1d1） ----
+VER="$(cat "$ROOT/VERSION" 2>/dev/null | tr -d '\n' || echo 0.0.0d0)"
+MAJ="$(echo "$VER" | cut -d. -f1)"; MIN="$(echo "$VER" | cut -d. -f2)"
+REST="$(echo "$VER" | cut -d. -f3)"
+SUB="$(echo "$REST" | sed 's/[^0-9].*$//')"; PAT="$(echo "$REST" | sed 's/^[0-9]*[a-z]*//')"
+[ -z "$SUB" ] && SUB=0; [ -z "$PAT" ] && PAT=0
+VCODE=$(( MAJ * 10000 + MIN * 100 + SUB * 10 + PAT ))
+
 APP="$SRC"
 OUT="$ROOT/build/android"
 KS="$ROOT/build/debug.keystore"
@@ -118,6 +126,7 @@ echo "platform    = $PLATFORM"
 echo "NDK         = $NDK ($PRE)"
 echo "CC          = $CC"
 echo "目标 / ABI  = $TARGET ($LIB) / $ABI, API $API"
+echo "版本        = $VER (versionCode $VCODE)"
 
 rm -rf "$OUT"
 mkdir -p "$OUT/classes" "$OUT/dex" "$OUT/stage/lib/$ABI" "$OUT/lib/$ABI"
@@ -149,7 +158,7 @@ cp "$OUT/dex/classes.dex" "$OUT/stage/classes.dex"
 echo "[3/6] clang -> lib$LIB.so ($ABI)"
 "$CC" -O2 -fPIC -shared -Wall \
       --sysroot="$SYSROOT" \
-      -I"$ROOT/src/core" \
+      -I"$ROOT/src/core" -DRF_VERSION=\"$VER\" \
       -o "$OUT/lib/$ABI/lib$LIB.so" \
       "$ROOT"/src/core/*.c "$ROOT"/src/pal/pal_posix.c "$APP/jni/$JNI"
 cp "$OUT/lib/$ABI/lib$LIB.so" "$OUT/stage/lib/$ABI/"
@@ -157,6 +166,7 @@ cp "$OUT/lib/$ABI/lib$LIB.so" "$OUT/stage/lib/$ABI/"
 echo "[4/6] aapt2 link"
 "$AAPT2" link -I "$PLATFORM" --manifest "$APP/AndroidManifest.xml" \
       --min-sdk-version "$API" --target-sdk-version 34 \
+      --version-name "$VER" --version-code "$VCODE" \
       -o "$OUT/base.apk"
 
 echo "[5/6] 打包 + zipalign"
