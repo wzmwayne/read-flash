@@ -296,6 +296,7 @@ int    rf_app_comp_dups(const RfApp *a);
 int    rf_app_last_action(const RfApp *a);   /* 调试：最近派发的动作 */
 int    rf_app_toc_count(const RfApp *a);     /* 调试/自检：目录条目数 */
 int    rf_app_cur_line(const RfApp *a);      /* 调试/自检：当前阅读行 */
+int    rf_app_first_row_line(const RfApp *a);/* 调试/自检：当前页首渲染行的源行号 */
 u64    rf_app_toc_line(const RfApp *a, int i);/* 调试/自检：目录第 i 条的行号 */
 const char *rf_app_dialog_text(const RfApp *a);   /* 调试/自检：当前提示框文本 */   /* 调试/自检：重复组件 id 次数（应为 0） */
 

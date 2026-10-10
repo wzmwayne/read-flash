@@ -91,8 +91,11 @@ struct RfApp {
     int sel_hit_arg;                        /* 命中组件的 arg（目录条目下标等） */
     int last_act;                           /* 调试：最近一次派发的动作 */
     int toc_n;                              /* 目录：标题条目数（扁平，文件顺序） */
-    int toc_src[256];                       /* 条目所在的源行号（1-based） */
+    int toc_src[256];                       /* 条目所在的源行号（1-based，实时算出） */
+    u32 read_crc[512];                      /* 已读标题的 CRC 集合（文件只持久化这个） */
+    int read_n;
     u16 toc_fg[256];                        /* 条目颜色（正在读橙/已读灰/未读白） */
+    u64 toc_cur_line;                       /* 进目录前的阅读行（用于判定"正在读"章节） */
     u64 toc_line[256];
     char toc_txt[256][120];
     u8  toc_seen[32];                       /* 每章 1 bit：曾经到达过（已读） */
@@ -155,6 +158,7 @@ static void book_path_join(char *dst, size_t cap, const char *root, const char *
 }
 
 static void update_system_comps(RfApp *a);
+static void layout(RfApp *a);
 
 static void ginit(RfApp *a)
 {
@@ -489,7 +493,29 @@ static void gen_import(RfApp *a)
     a->data_len = a->gen_len;
 }
 
-/* 从 .config 读目录（导入时已扫描好：条目 = 任意层级的 # 标题，扁平顺序） */
+/* 实时构建目录：扫描正文中的 # / ## / ### 标题（扁平、文件顺序） */
+static void build_toc(RfApp *a)
+{
+    u64 i = 0, line = 1;
+    a->toc_n = 0;
+    while (i < a->data_len && a->toc_n < 256) {
+        u64 e = i;
+        while (e < a->data_len && a->data[e] != '\n') e++;
+        if (e > i && a->data[i] == '#' && (e - i) < 120) {
+            size_t n = (size_t)(e - i);
+            if (n >= sizeof a->toc_txt[0]) n = sizeof a->toc_txt[0] - 1;
+            memcpy(a->toc_txt[a->toc_n], a->data + i, n);
+            a->toc_txt[a->toc_n][n] = 0;
+            a->toc_line[a->toc_n] = line;
+            a->toc_src[a->toc_n] = (int)line;
+            a->toc_n++;
+        }
+        i = (e < a->data_len) ? e + 1 : a->data_len;
+        line++;
+    }
+}
+
+/* 兼容：保留旧的 .config 读法（仅在正文不可用时兜底） */
 static void load_toc(RfApp *a, const char *id)
 {
     char path[700];
@@ -517,23 +543,42 @@ static void load_toc(RfApp *a, const char *id)
         }
     }
     fclose(f);
-    /* 访问位 */
-    memset(a->toc_seen, 0, sizeof a->toc_seen);
+    /* 已读标题集合（只记标题，不记行号；目录每次实时构建） */
+    a->read_n = 0;
     book_path_join(path, sizeof path, a->st->root, id, ".read");
     f = fopen(path, "r");
     if (f) {
-        char magic[16], bits[80];
-        int k;
-        if (fscanf(f, "%15s %79s", magic, bits) == 2 && strncmp(magic, "RFREAD001", 9) == 0) {
-            for (k = 0; k < 32 && bits[k * 2] && bits[k * 2 + 1]; k++) {
-                int hi = bits[k*2] <= '9' ? bits[k*2]-'0' : (bits[k*2]|32)-'a'+10;
-                int lo = bits[k*2+1] <= '9' ? bits[k*2+1]-'0' : (bits[k*2+1]|32)-'a'+10;
-                a->toc_seen[k] = (u8)((hi << 4) | lo);
-            }
+        char line2[64];
+        while (fgets(line2, sizeof line2, f) && a->read_n < 512) {
+            unsigned long v;
+            if (sscanf(line2, "%lx", &v) == 1 && v != 0)
+                a->read_crc[a->read_n++] = (u32)v;   /* 每行一个已读标题的 CRC */
         }
         fclose(f);
     }
     (void)i;
+}
+
+/* 标题 → CRC（归一化：去掉 # 前缀与空白） */
+static u32 title_crc(const char *t)
+{
+    char buf[128];
+    size_t i = 0, k = 0;
+    while (t[i] == '#') i++;
+    while (t[i] == ' ') i++;
+    for (; t[i] && k < sizeof buf - 1; i++) {
+        if (t[i] == ' ' || t[i] == '\t') continue;
+        buf[k++] = t[i];
+    }
+    return rf_crc32((const u8 *)buf, k);
+}
+
+static int title_is_read(const RfApp *a, int idx)
+{
+    u32 c = title_crc(a->toc_txt[idx]);
+    int i;
+    for (i = 0; i < a->read_n; i++) if (a->read_crc[i] == c) return 1;
+    return 0;
 }
 
 static void save_toc_seen(RfApp *a)
@@ -543,9 +588,9 @@ static void save_toc_seen(RfApp *a)
     int k;
     FILE *f;
     if (!a->toc_dirty) return;
-    off += (size_t)snprintf(buf + off, sizeof buf - off, "RFREAD001\n");
-    for (k = 0; k < 32; k++) off += (size_t)snprintf(buf + off, sizeof buf - off, "%02X", a->toc_seen[k]);
-    off += (size_t)snprintf(buf + off, sizeof buf - off, "\n%08X\n", rf_crc32((const u8 *)buf, off));
+    for (k = 0; k < a->read_n; k++)
+        off += (size_t)snprintf(buf + off, sizeof buf - off, "%08lX\n", (unsigned long)a->read_crc[k]);
+    off += (size_t)snprintf(buf + off, sizeof buf - off, "#%08X\n", rf_crc32((const u8 *)buf, off));
     book_path_join(path, sizeof path, a->st->root, a->id, ".read");
     f = fopen(path, "wb");
     if (f) { fwrite(buf, 1, off, f); fclose(f); }
@@ -556,16 +601,17 @@ static void save_toc_seen(RfApp *a)
 static int cur_chapter(const RfApp *a)
 {
     int i, c = -1;
-    for (i = 0; i < a->toc_n; i++) if (a->toc_line[i] <= a->line) c = i;
+    u64 line = (a->book == RF_BOOK_TOC) ? a->toc_cur_line : a->line;
+    for (i = 0; i < a->toc_n; i++) if (a->toc_line[i] <= line) c = i;
     return c;
 }
 
 static void mark_chapter(RfApp *a)
 {
     int c = cur_chapter(a);
-    if (c < 0 || c >= 256) return;
-    if (!(a->toc_seen[c >> 3] & (1u << (c & 7)))) {
-        a->toc_seen[c >> 3] |= (u8)(1u << (c & 7));
+    if (c < 0 || c >= a->toc_n) return;
+    if (!title_is_read(a, c)) {
+        if (a->read_n < 512) a->read_crc[a->read_n++] = title_crc(a->toc_txt[c]);
         a->toc_dirty = 1;
         save_toc_seen(a);
     }
@@ -581,10 +627,9 @@ static void gen_toc(RfApp *a)
         gputs(a, "目录为空。\n这本书里没有 # / ## / ### 标题。\n正文仍可正常阅读，翻页不受影响。\n");
     } else {
         for (i = 0; i < a->toc_n; i++) {
-            u16 fg = (i == cur) ? C_ORANGE
-                   : ((a->toc_seen[i >> 3] & (1u << (i & 7))) ? C_DIM : C_TEXT);
+            u16 fg = (i == cur) ? C_ORANGE : (title_is_read(a, i) ? C_DIM : C_TEXT);
             a->toc_src[i] = grow(a);
-            a->toc_fg[i] = fg;
+            a->toc_fg[i] = fg;              /* 仅作调试参考；实际颜色在绑定时重算 */
             (void)id;
             gputs(a, a->toc_txt[i]);
             gputs(a, "\n");
@@ -595,11 +640,20 @@ static void gen_toc(RfApp *a)
 }
 
 /* 目录页：把当前页每一渲染行绑到对应的目录条目（翻页后重新绑定，命中永远与所见一致） */
+/* 行号 → 字节偏移（与导入时统计行号的口径一致：从 1 开始、按 '\n' 计数） */
+static u64 line_to_off(const u8 *data, u64 len, u64 line)
+{
+    u64 i = 0, l = 1;
+    while (i < len && l < line) { if (data[i] == '\n') l++; i++; }
+    return i;
+}
+
 static void bind_toc_comps(RfApp *a)
 {
-    int i, k;
+    int i, k, cur;
     char id[24];
     if (a->book != RF_BOOK_TOC) return;
+    cur = cur_chapter(a);                    /* 每次绑定都重算状态：正在读/已读/未读 */
     for (i = 0; i < a->g.rows && i < RF_MAX_ROWS; i++) {
         int src = (int)a->rows[i].line;                 /* 该渲染行的源行号 */
         if (a->rows[i].kind == RF_ROW_BLANK) continue;
@@ -607,9 +661,10 @@ static void bind_toc_comps(RfApp *a)
             if (a->toc_src[k] != src) continue;
             snprintf(id, sizeof id, "toc.item.%d", k);
             {
+                u16 fg = (k == cur) ? C_ORANGE : (title_is_read(a, k) ? C_DIM : C_TEXT);
                 RfComp *c = comp_reg(a, id, RF_BAND_BODY, i + 1, 0, a->g.cols,
                                      ACT_TOC_JUMP, RF_C_RADIO,
-                                     k == cur_chapter(a), 1, a->toc_fg[k], a->toc_fg[k]);
+                                     k == cur, 1, fg, fg);
                 if (c) c->arg = k;
             }
             break;
@@ -747,12 +802,12 @@ static void load_reader(RfApp *a, const char *id)
         rf_index_build(a->st, id, b, len, &a->ix, a->storage, 1);
     {
         u64 pl = 0, po = 0;
-        if (rf_progress_load(a->st, id, &pl, &po) == 0 && pl >= 1 && pl <= a->ix.L) {
+        if (rf_progress_load(a->st, id, &pl, &po) == 0 && pl >= 1 && pl <= rf_count_lines(b, len)) {
             a->line = pl;
-            a->off = po <= len ? po : 0;
+            a->off = line_to_off(b, len, pl);      /* 以行号为准重算偏移 */
         }
     }
-    load_toc(a, a->id);          /* 用 a->id：调用方传入的 id 可能已失效/为空 */
+    build_toc(a);                /* 目录实时构建（正文扫 # 标题） */
     /* 标题 */
     {
         RfBookEnt e;
@@ -804,7 +859,12 @@ static void open_book(RfApp *a, int book)
         snprintf(a->title, sizeof a->title, "设置");
         break;
     case RF_BOOK_DEBUG:    gen_debug(a);    snprintf(a->title, sizeof a->title, "调试"); break;
-    case RF_BOOK_TOC:      gen_toc(a); snprintf(a->title, sizeof a->title, "目录"); break;
+    case RF_BOOK_TOC:
+        gen_toc(a);
+        a->laid = 0;
+        layout(a);                          /* 立刻排版一次：翻页键状态与条目绑定以目录自身为准 */
+        snprintf(a->title, sizeof a->title, "目录");
+        break;
     case RF_BOOK_IMPORT:   scan_import_dir(a); gen_import(a);
                            snprintf(a->title, sizeof a->title, "导入"); break;
     case RF_BOOK_DIALOG:   gen_dialog(a);   snprintf(a->title, sizeof a->title, "提示"); break;
@@ -1109,17 +1169,20 @@ static void do_action(RfApp *a, int act)
         }
         return;
     case ACT_SETTINGS: stack_push(a, RF_BOOK_SETTINGS); return;
-    case ACT_TOC:       stack_push(a, RF_BOOK_TOC); return;
+    case ACT_TOC:
+        a->toc_cur_line = a->line;          /* 先记住阅读位置：open_book 会重置 a->line */
+        stack_push(a, RF_BOOK_TOC);
+        return;
     case ACT_TOC_JUMP: {
         int idx = a->sel_hit_arg;                   /* 组件登记时写入的条目下标 */
         if (idx >= 0 && idx < a->toc_n) {
             a->line = a->toc_line[idx];
-            a->off = rf_index_locate(&a->ix, a->data, 0, a->line);
-            if (a->ix.N == 0) a->off = 0;
-            if (a->toc_seen[idx >> 3] & (1u << (idx & 7))) { /* 已读不变 */ }
-            a->toc_seen[idx >> 3] |= (u8)(1u << (idx & 7));
-            a->toc_dirty = 1;
-            save_toc_seen(a);
+            a->off = line_to_off(a->data, a->data_len, a->line);   /* 页面按字节偏移排版 */
+            if (!title_is_read(a, idx)) {
+                if (a->read_n < 512) a->read_crc[a->read_n++] = title_crc(a->toc_txt[idx]);
+                a->toc_dirty = 1;
+                save_toc_seen(a);
+            }
             a->laid = 0;
             rf_progress_save(a->st, a->id, a->line, a->off, a->data_len);
             stack_pop(a);                            /* 出栈回阅读书并重排 */
@@ -1421,6 +1484,14 @@ const char *rf_app_dialog_text(const RfApp *a) { return a->dlg; }
 int rf_app_last_action(const RfApp *a) { return a->last_act; }
 int rf_app_toc_count(const RfApp *a) { return a->toc_n; }
 int rf_app_cur_line(const RfApp *a) { return (int)a->line; }
+int rf_app_first_row_line(const RfApp *a)
+{
+    int i;
+    for (i = 0; i < a->g.rows; i++)
+        if (a->rows[i].kind != RF_ROW_BLANK && a->rows[i].end_off > a->rows[i].start_off)
+            return (int)a->rows[i].line;
+    return -1;
+}
 u64 rf_app_toc_line(const RfApp *a, int i) { return (i >= 0 && i < a->toc_n) ? a->toc_line[i] : 0; }
 
 /* 平台选择器完成（已把文件拷进导入目录）：刷新导入页面 */

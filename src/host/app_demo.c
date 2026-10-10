@@ -237,11 +237,14 @@ int main(void)
         printf("  目录: 阅读=%d → 目录页=%d → 跳转后=%d 条目数=%d 命中动作=%d\n",
                b0, b1, b2, rf_app_toc_count(a), rf_app_last_action(a));
         printf("  判定: 目录页与跳转=%d\n", (b0 == 1 && b1 == 7 && b2 == 1));
+        rf_app_render(a, fb, W, H);          /* 先渲染：让阅读页按跳转后的位置重新排版 */
         {   /* 跳转必须落在该标题所在行 */
             u64 want = rf_app_toc_line(a, rf_app_toc_count(a) > 1 ? 1 : 0);
             printf("  跳转落点: 当前行=%d 期望=%llu\n", rf_app_cur_line(a), (unsigned long long)want);
-            printf("  判定: 跳到标题行=%d\n",
-                   (int)((u64)rf_app_cur_line(a) == want || (u64)rf_app_cur_line(a) >= want));
+            printf("  页首渲染行=%d\n", rf_app_first_row_line(a));
+            printf("  判定: 跳到标题行=%d 页首即标题行=%d\n",
+                   (int)((u64)rf_app_cur_line(a) == want || (u64)rf_app_cur_line(a) >= want),
+                   (u64)rf_app_first_row_line(a) == want);
         }
     }
 
