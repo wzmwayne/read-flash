@@ -12,7 +12,7 @@ static void     *g_ud;
 static u8        g_pool[G_POOL];
 static size_t    g_used;
 static int       g_n;
-static struct { u32 cp; int px, w, h; size_t off; } g_slot[G_SLOTS];
+static struct { u32 cp; int px, flags, w, h; size_t off; } g_slot[G_SLOTS];
 static u8        g_tmp[64 * 64];
 
 void rf_glyph_set_provider(RfGlyphFn fn, void *ud)
@@ -29,12 +29,12 @@ void rf_glyph_reset(void)
     g_n = 0;
 }
 
-int rf_glyph_get(u32 cp, int px, const u8 **alpha, int *w, int *h)
+int rf_glyph_get(u32 cp, int px, int flags, const u8 **alpha, int *w, int *h)
 {
     int i;
     if (px < 1) px = 1;
     for (i = 0; i < g_n; i++) {
-        if (g_slot[i].cp == cp && g_slot[i].px == px) {
+        if (g_slot[i].cp == cp && g_slot[i].px == px && g_slot[i].flags == flags) {
             *alpha = g_pool + g_slot[i].off;
             *w = g_slot[i].w;
             *h = g_slot[i].h;
@@ -44,7 +44,7 @@ int rf_glyph_get(u32 cp, int px, const u8 **alpha, int *w, int *h)
     if (!g_fn) return 0;
     {
         int gw = 0, gh = 0;
-        if (!g_fn(g_ud, cp, px, g_tmp, (int)sizeof g_tmp, &gw, &gh)) return 0;
+        if (!g_fn(g_ud, cp, px, flags, g_tmp, (int)sizeof g_tmp, &gw, &gh)) return 0;
         if (gw <= 0 || gh <= 0 || gw > 64 || gh > 64) return 0;
         if ((size_t)(gw * gh) > sizeof g_tmp) return 0;
         if (g_n >= G_SLOTS || g_used + (size_t)(gw * gh) > G_POOL) {
@@ -54,6 +54,7 @@ int rf_glyph_get(u32 cp, int px, const u8 **alpha, int *w, int *h)
         memcpy(g_pool + g_used, g_tmp, (size_t)(gw * gh));
         g_slot[g_n].cp = cp;
         g_slot[g_n].px = px;
+        g_slot[g_n].flags = flags;
         g_slot[g_n].w = gw;
         g_slot[g_n].h = gh;
         g_slot[g_n].off = g_used;
@@ -67,12 +68,13 @@ int rf_glyph_get(u32 cp, int px, const u8 **alpha, int *w, int *h)
 }
 
 /* 宿主/无平台字体时的占位字形：按列宽画一个描边方块（用于验证网格几何） */
-int rf_glyph_builtin(void *ud, u32 cp, int px, u8 *alpha, int cap, int *gw, int *gh)
+int rf_glyph_builtin(void *ud, u32 cp, int px, int flags, u8 *alpha, int cap, int *gw, int *gh)
 {
     int w = (rf_char_cols(cp) == 2) ? px : (px + 1) / 2;
     int h = px;
     int x, y;
     (void)ud;
+    (void)flags;
     if (w < 2) w = 2;
     if (h < 2) h = 2;
     if (w > 64) w = 64;
@@ -81,7 +83,8 @@ int rf_glyph_builtin(void *ud, u32 cp, int px, u8 *alpha, int cap, int *gw, int 
     memset(alpha, 0, (size_t)(w * h));
     for (y = 1; y < h - 1; y++)
         for (x = 1; x < w - 1; x++)
-            if (x == 1 || y == 1 || x == w - 2 || y == h - 2)
+            if (x == 1 || y == 1 || x == w - 2 || y == h - 2 ||
+                (flags & RF_GLYPH_BOLD && (x == 2 || y == 2)))
                 alpha[y * w + x] = 220;
     *gw = w;
     *gh = h;

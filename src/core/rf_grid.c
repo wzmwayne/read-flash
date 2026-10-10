@@ -4,7 +4,10 @@
 void rf_settings_default(RfSettings *s)
 {
     s->font_dp = RF_FONT_DP_DEFAULT;
-    s->line_height_dp = RF_LINEHT_DP_DEFAULT;
+    s->lh_auto = 1;
+    s->lh_tenths = RF_LH_MULT_DEFAULT;
+    s->lh_dp = RF_LINEHT_DP_DEFAULT;
+    s->live_edit = 0;
     s->m_top_dp = s->m_bot_dp = s->m_left_dp = s->m_right_dp = RF_MARGIN_DP_DEFAULT;
 }
 
@@ -35,9 +38,16 @@ void rf_grid_build(RfGrid *g, const RfSettings *s,
     g->wc = (g->fp + 1) / 2;
     if (g->wc < 1) g->wc = 1;
 
-    /* 行高 = 行容器高度（0 = 自动 = 字号 × 1.2）；文本大小由字号决定，不受行高约束 */
-    g->rh = (s->line_height_dp > 0) ? dp2px(s->line_height_dp, density)
-                                    : (g->fp * 1200 + 999) / 1000;
+    /* 行高 = 行容器高度：自动 = 字号 × 倍数（0.1 精度），否则取绝对 dp。
+     * 文本大小只由字号决定；文字高于容器时顶部对齐容器顶，溢出照常渲染。 */
+    if (s->lh_auto) {
+        int m = s->lh_tenths;
+        if (m < RF_LH_MULT_MIN) m = RF_LH_MULT_MIN;
+        if (m > RF_LH_MULT_MAX) m = RF_LH_MULT_MAX;
+        g->rh = (g->fp * m + 5) / 10;
+    } else {
+        g->rh = dp2px(s->lh_dp, density);
+    }
     if (g->rh < 1) g->rh = 1;
 
     /* 四向边距（像素） */

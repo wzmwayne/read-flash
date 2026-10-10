@@ -7,6 +7,7 @@
 #include <string.h>
 #include <ft2build.h>
 #include FT_FREETYPE_H
+#include FT_SYNTHESIS_H
 
 static FT_Library g_lib;
 static FT_Face    g_face;
@@ -46,7 +47,7 @@ int rf_glyph_ft_init(const char *path, int face_index)
     return 0;
 }
 
-int rf_glyph_ft(void *ud, u32 cp, int px, u8 *alpha, int cap, int *gw, int *gh)
+int rf_glyph_ft(void *ud, u32 cp, int px, int flags, u8 *alpha, int cap, int *gw, int *gh)
 {
     FT_UInt idx;
     int x, y;
@@ -56,6 +57,7 @@ int rf_glyph_ft(void *ud, u32 cp, int px, u8 *alpha, int cap, int *gw, int *gh)
     idx = FT_Get_Char_Index(g_face, cp);
     if (idx == 0 && cp != ' ') return 0;             /* 字体没有该码点 */
     if (FT_Load_Glyph(g_face, idx, FT_LOAD_RENDER | FT_LOAD_TARGET_NORMAL) != 0) return 0;
+    if (flags & RF_GLYPH_BOLD) FT_GlyphSlot_Embolden(g_face->glyph);   /* 合成加粗 */
     {
         FT_Bitmap *bm = &g_face->glyph->bitmap;
         int w = (int)bm->width, h = (int)bm->rows;

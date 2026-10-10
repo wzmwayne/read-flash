@@ -27,16 +27,22 @@ typedef int64_t  i64;
 #define RF_FONT_DP_MIN       12
 #define RF_FONT_DP_MAX       48
 #define RF_FONT_DP_DEFAULT   16
-#define RF_LINEHT_DP_MAX     96     /* 行高（行容器高度）上限（dp） */
+#define RF_LINEHT_DP_MIN     8      /* 行高绝对值下限（dp） */
+#define RF_LINEHT_DP_MAX     96     /* 行高绝对值上限（dp） */
+#define RF_LH_MULT_MIN       10     /* 自动倍数下限 ×10（1.0） */
+#define RF_LH_MULT_MAX       30     /* 自动倍数上限 ×10（3.0） */
+#define RF_LH_MULT_DEFAULT   12     /* 默认 1.2 */
 #define RF_MARGIN_DP_MAX     64
 #define RF_MARGIN_DP_DEFAULT 8
-#define RF_LINEHT_DP_DEFAULT 0      /* 0 = 自动 = 字号 */
+#define RF_LINEHT_DP_DEFAULT 19     /* 非自动时的默认行高（约 16dp 字号 × 1.2） */
 
 typedef struct {
-    int font_dp;            /* 字号，dp，整数 */
-    int line_height_dp;     /* 行高：**行容器的高度**（dp），相邻行容器紧贴堆叠；0 = 自动（字号 × 1.2）
-                             * 文字大小由 font_dp 控制；文字高于容器时顶部对齐容器顶，溢出照常渲染 */
-    int m_top_dp, m_bot_dp, m_left_dp, m_right_dp;
+    int font_dp;            /* 字号，dp（文字大小）；默认 16 */
+    int lh_auto;            /* 行高是否自动（多选框）：1 = 字号 × 倍数，0 = 绝对 dp */
+    int lh_tenths;          /* 自动时的倍数 ×10（12 = 1.2，0.1 精度），范围 10–30 */
+    int lh_dp;              /* 非自动时的行高绝对值（dp），范围 8–96 */
+    int m_top_dp, m_bot_dp, m_left_dp, m_right_dp;   /* 边距 dp（0 表示无边距，非"自动"） */
+    int live_edit;          /* 是否实时修改：1 = 调整立即影响渲染（本次会话），0 = 只影响 [预览] */
 } RfSettings;
 
 void rf_settings_default(RfSettings *s);
@@ -195,16 +201,17 @@ u64 pal_now_unix(void);
 
 /* ---------------- 字形提供者（D8：排版不依赖字体，字形按网格约束绘制） ---------------- */
 /* 取一个码点的 alpha 位图：alpha 缓冲容量 cap 字节，返回写入的宽高。成功返回 1。 */
-typedef int (*RfGlyphFn)(void *ud, u32 cp, int px, u8 *alpha, int cap, int *gw, int *gh);
+#define RF_GLYPH_BOLD 1     /* 位标志：加粗（标题三档都要加粗，#/## 另有放大） */
+typedef int (*RfGlyphFn)(void *ud, u32 cp, int px, int flags, u8 *alpha, int cap, int *gw, int *gh);
 void rf_glyph_set_provider(RfGlyphFn fn, void *ud);
 void rf_glyph_reset(void);
-int  rf_glyph_get(u32 cp, int px, const u8 **alpha, int *w, int *h);
+int  rf_glyph_get(u32 cp, int px, int flags, const u8 **alpha, int *w, int *h);
 /* 宿主验证用：FreeType + 真字体（文泉驿等宽正黑优先，可用 RF_FONT 覆盖） */
 int  rf_glyph_ft_init(const char *path, int face_index);
-int  rf_glyph_ft(void *ud, u32 cp, int px, u8 *alpha, int cap, int *gw, int *gh);
+int  rf_glyph_ft(void *ud, u32 cp, int px, int flags, u8 *alpha, int cap, int *gw, int *gh);
 
 /* 内置占位字体（仅当没有真字体时使用）；画描边方块。 */
-int  rf_glyph_builtin(void *ud, u32 cp, int px, u8 *alpha, int cap, int *gw, int *gh);
+int  rf_glyph_builtin(void *ud, u32 cp, int px, int flags, u8 *alpha, int cap, int *gw, int *gh);
 
 /* ---------------- 存储（§4.1 设置、§9 存储格式） ---------------- */
 #define RF_MAX_BOOKS 256

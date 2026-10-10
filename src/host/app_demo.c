@@ -198,17 +198,46 @@ int main(void)
         long in_container, below;
         tap_back(a);                        /* 回书库 */
         tap_bar(a, 3);                      /* [设置] */
-        tap_body_btn(a, 3);                 /* 行高 +2dp */
-        tap_body_btn(a, 3);                 /* 行高 4dp（容器 8px，远小于字形 32px） */
+        tap_body_btn(a, 2);                 /* 取消"行高自动" */
+        for (int k = 0; k < 5; k++) tap_body_btn(a, 3);   /* 行高 -2dp ×5 → 容器远小于字形 */
         tap_bar(a, 0);                      /* [预览]：按新行高重排 */
         rf_app_metrics(a, &sw, &sh, &wc, &rh, &cols, &rows, &bx, &by, &bary);
         rf_app_render(a, fb, W, H);
         in_container = ink(bx, by, bx + wc * cols, by + rh);
         below = ink(bx, by + rh, bx + wc * cols, by + rh * 3);
-        printf("  行容器=%dpx 字号像素=32px：容器内墨点=%ld 溢出到下方墨点=%ld\n",
+        printf("  行容器=%dpx 字号像素=32px（自动已取消）：容器内墨点=%ld 溢出墨点=%ld\n",
                rh, in_container, below);
         printf("  判定: 顶部有字=%d 溢出仍渲染=%d\n", in_container > 0, below > 0);
         dump("/tmp/12-overflow.ppm");
+    }
+
+    /* 6.6) "实时修改"开关：开 → 调整立即生效（无需 [预览]） */
+    {
+        int sw, sh, wc0, rh0, wc1, rh1, c, r, bx, by, bary;
+        tap_back(a);                        /* 回书库 */
+        tap_bar(a, 3);                      /* [设置] */
+        tap_body_btn(a, 9);                 /* (+)实时修改 → 开 */
+        rf_app_metrics(a, &sw, &sh, &wc0, &rh0, &c, &r, &bx, &by, &bary);
+        tap_body_btn(a, 1);                 /* 字号 +1 */
+        rf_app_metrics(a, &sw, &sh, &wc1, &rh1, &c, &r, &bx, &by, &bary);
+        printf("  实时修改=开：字号+1 → wc %d→%d rh %d→%d\n", wc0, wc1, rh0, rh1);
+        printf("  判定: 实时生效=%d\n", (wc1 != wc0 || rh1 != rh0));
+        tap_body_btn(a, 9);                 /* 关掉，便于后续观察 */
+    }
+
+    /* 6.7) 书栈：设置 → [调试] → 返回应回到设置（出栈一次） */
+    {
+        int b1, b2, b3;
+        tap_back(a);                        /* 回书库 */
+        tap_bar(a, 3);                      /* [设置] 入栈 */
+        b1 = rf_app_book_id(a);
+        tap_bar(a, 2);                      /* [调试] 入栈 */
+        b2 = rf_app_book_id(a);
+        tap_back(a);                        /* 出栈一次 */
+        b3 = rf_app_book_id(a);
+        printf("  书栈: 设置=%d → 调试=%d → 出栈=%d\n", b1, b2, b3);
+        printf("  判定: 出栈回到上一本=%d\n", (b1 == 2 && b2 == 3 && b3 == 2));
+        tap_back(a);                        /* 回书库 */
     }
 
     /* 7) 退出并确认进度落盘 */

@@ -140,18 +140,21 @@ int rf_settings_load(RfStore *st)
     while (li_next(&it, &s, &n)) {
         line++;
         if (line == 1) {
-            if (n != 8 || memcmp(s, "RFSET003", 8) != 0) { free(b); return 1; }
-        } else if (line >= 2 && line <= 7) {
+            if (n != 8 || memcmp(s, "RFSET004", 8) != 0) { free(b); return 1; }
+        } else if (line >= 2 && line <= 10) {
             if (hex_get(s, n, 4, &v) < 0) { free(b); return 1; }
             switch (line) {
-            case 2: st->settings.font_dp = (int)v; break;
-            case 3: st->settings.line_height_dp = (int)v; break;
-            case 4: st->settings.m_top_dp = (int)v; break;
-            case 5: st->settings.m_bot_dp = (int)v; break;
-            case 6: st->settings.m_left_dp = (int)v; break;
-            case 7: st->settings.m_right_dp = (int)v; break;
+            case 2:  st->settings.font_dp = (int)v; break;
+            case 3:  st->settings.lh_auto = (int)v ? 1 : 0; break;
+            case 4:  st->settings.lh_tenths = (int)v; break;
+            case 5:  st->settings.lh_dp = (int)v; break;
+            case 6:  st->settings.m_top_dp = (int)v; break;
+            case 7:  st->settings.m_bot_dp = (int)v; break;
+            case 8:  st->settings.m_left_dp = (int)v; break;
+            case 9:  st->settings.m_right_dp = (int)v; break;
+            case 10: st->settings.live_edit = (int)v ? 1 : 0; break;
             }
-        } else if (line == 8) {
+        } else if (line == 11) {
             if (!crc_ok((const char *)b, (size_t)it.off - n - 1, s, n)) { free(b); return 1; }
         }
     }
@@ -159,8 +162,11 @@ int rf_settings_load(RfStore *st)
     /* 范围钳制 */
     if (st->settings.font_dp < RF_FONT_DP_MIN || st->settings.font_dp > RF_FONT_DP_MAX)
         st->settings.font_dp = RF_FONT_DP_DEFAULT;
-    if (st->settings.line_height_dp < 0 || st->settings.line_height_dp > RF_LINEHT_DP_MAX)
-        st->settings.line_height_dp = 0;
+    if (st->settings.lh_tenths < RF_LH_MULT_MIN || st->settings.lh_tenths > RF_LH_MULT_MAX)
+        st->settings.lh_tenths = RF_LH_MULT_DEFAULT;
+    if (st->settings.lh_dp < RF_LINEHT_DP_MIN || st->settings.lh_dp > RF_LINEHT_DP_MAX)
+        st->settings.lh_dp = RF_LINEHT_DP_DEFAULT;
+    st->settings.live_edit = st->settings.live_edit ? 1 : 0;
     return 0;
 }
 
@@ -168,13 +174,16 @@ int rf_settings_save(RfStore *st, const RfSettings *s)
 {
     char buf[256], p[700];
     size_t off = 0;
-    off = put_str(buf, off, "RFSET003");
+    off = put_str(buf, off, "RFSET004");
     off = put_hex(buf, off, (u64)s->font_dp, 4);
-    off = put_hex(buf, off, (u64)s->line_height_dp, 4);
+    off = put_hex(buf, off, (u64)s->lh_auto, 4);
+    off = put_hex(buf, off, (u64)s->lh_tenths, 4);
+    off = put_hex(buf, off, (u64)s->lh_dp, 4);
     off = put_hex(buf, off, (u64)s->m_top_dp, 4);
     off = put_hex(buf, off, (u64)s->m_bot_dp, 4);
     off = put_hex(buf, off, (u64)s->m_left_dp, 4);
     off = put_hex(buf, off, (u64)s->m_right_dp, 4);
+    off = put_hex(buf, off, (u64)s->live_edit, 4);
     off = put_hex(buf, off, (u64)rf_crc32((const u8 *)buf, off), 8);
     join(p, sizeof p, st->root, "config");
     return write_atomic(p, buf, off);

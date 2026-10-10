@@ -125,7 +125,7 @@ static void check_grid(Rpt *r)
     static const int SH[7] = {320, 480, 800, 1280, 1920, 2560, 1080};
     static const int DN[5] = {1000, 1500, 2000, 2750, 3000};
     static const int FN[5] = {12, 16, 24, 32, 48};
-    static const int SP[4] = {0, 16, 24, 48};        /* 行高 dp，0 = 自动 */
+    static const int SP[4] = {10, 12, 20, 30};       /* 行高倍数 ×10（自动模式） */
     int combos = 0, bad0 = r->fails, skipped = 0, overflow = 0;
     size_t i;
     int d, f, s;
@@ -141,7 +141,8 @@ static void check_grid(Rpt *r)
 
         rf_settings_default(&st);
         st.font_dp = FN[f];
-        st.line_height_dp = SP[s];
+        st.lh_auto = 1;
+        st.lh_tenths = SP[s];
         rf_grid_build(&g, &st, SW[i], SH[i], DN[d]);
         combos++;
         if (g.rows > RF_MAX_ROWS) { skipped++; continue; }
@@ -408,8 +409,8 @@ int rf_selftest(char *out, size_t outsz)
     m.truncate_scroll = 0;
     rf_grid_build(&g, &st, FB_W, FB_H, 2000);
 
-    rp(&r, "Read-Flash 最小验证（§16）  网格 %dx%d d=2000 字号 %ddp 行高 %ddp（0=自动）\n",
-       FB_W, FB_H, st.font_dp, st.line_height_dp);
+    rp(&r, "Read-Flash 最小验证（§16）  网格 %dx%d d=2000 字号 %ddp 行高自动 ×%d.%d\n",
+       FB_W, FB_H, st.font_dp, st.lh_tenths / 10, st.lh_tenths % 10);
     rp(&r, "C=%d 列  V=%d 行  半角列宽=%dpx  行高(容器)=%dpx  边距=(%d,%d,%d,%d)\n",
        g.cols, g.rows, g.wc, g.rh, g.m_top, g.m_bot, g.m_left, g.m_right);
 
