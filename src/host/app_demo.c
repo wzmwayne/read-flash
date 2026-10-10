@@ -13,6 +13,17 @@
 static u16 fb[W * H];
 static RfGrid grid;
 
+/* 统计矩形内的非黑像素数（判断文字是否渲染到了某处） */
+static long ink(int x0, int y0, int x1, int y1)
+{
+    long n = 0;
+    int x, y;
+    for (y = y0; y < y1; y++)
+        for (x = x0; x < x1; x++)
+            if (y >= 0 && y < H && x >= 0 && x < W && fb[y * W + x]) n++;
+    return n;
+}
+
 static void dump(const char *path)
 {
     FILE *f = fopen(path, "wb");
@@ -179,6 +190,25 @@ int main(void)
                wc2 != wc0 || rh2 != rh0,
                wc3 == wc0 && rh3 == rh0,
                wc4 == wc2 && rh4 == rh2);
+    }
+
+    /* 6.5) 文字高于行容器：顶部对齐 + 溢出照常渲染 */
+    {
+        int sw, sh, wc, rh, cols, rows, bx, by, bary;
+        long in_container, below;
+        tap_back(a);                        /* 回书库 */
+        tap_bar(a, 3);                      /* [设置] */
+        tap_body_btn(a, 3);                 /* 行高 +2dp */
+        tap_body_btn(a, 3);                 /* 行高 4dp（容器 8px，远小于字形 32px） */
+        tap_bar(a, 0);                      /* [预览]：按新行高重排 */
+        rf_app_metrics(a, &sw, &sh, &wc, &rh, &cols, &rows, &bx, &by, &bary);
+        rf_app_render(a, fb, W, H);
+        in_container = ink(bx, by, bx + wc * cols, by + rh);
+        below = ink(bx, by + rh, bx + wc * cols, by + rh * 3);
+        printf("  行容器=%dpx 字号像素=32px：容器内墨点=%ld 溢出到下方墨点=%ld\n",
+               rh, in_container, below);
+        printf("  判定: 顶部有字=%d 溢出仍渲染=%d\n", in_container > 0, below > 0);
+        dump("/tmp/12-overflow.ppm");
     }
 
     /* 7) 退出并确认进度落盘 */

@@ -227,15 +227,7 @@ static void gen_settings(RfApp *a)
         gbtn(a, ACT_FONT_UP, "+");
         gputs(a, "      （dp，12 - 48）\n\n");
 
-        gputs(a, "行距（两行之间的距离）\n");
-        gbtn(a, ACT_SP_DN, "-");
-        gputs(a, " ");
-        gnum(a, (unsigned long long)s->line_pitch_dp);
-        gputs(a, " ");
-        gbtn(a, ACT_SP_UP, "+");
-        gputs(a, "   （dp，0 = 自动）\n\n");
-
-        gputs(a, "行高（单行盒高度）\n");
+        gputs(a, "行高（行容器高度）\n");
         gbtn(a, ACT_LH_DN, "-");
         gputs(a, " ");
         gnum(a, (unsigned long long)s->line_height_dp);
@@ -276,21 +268,19 @@ static void gen_debug(RfApp *a)
     gnum(a, a->line);
     gputs(a, "\n行内偏移   ");
     gnum(a, a->off);
-    gputs(a, "\n行距       ");
-    gnum(a, (unsigned long long)a->st->settings.line_pitch_dp);
-    gputs(a, " dp（0=自动，实际 ");
-    gnum(a, (unsigned long long)a->g.rh);
-    gputs(a, " px）\n行高       ");
+    gputs(a, "\n行高       ");
     gnum(a, (unsigned long long)a->st->settings.line_height_dp);
-    gputs(a, " dp（0=自动，实际 ");
-    gnum(a, (unsigned long long)a->g.bh);
+    gputs(a, " dp（0=自动，容器实际 ");
+    gnum(a, (unsigned long long)a->g.rh);
     gputs(a, " px）\n索引条目   ");
     gnum(a, a->ix.N);
     gputs(a, "\n索引间隔 K ");
     gnum(a, a->ix.K);
     gputs(a, "\n字号       ");
     gnum(a, (unsigned long long)a->st->settings.font_dp);
-    gputs(a, " dp");
+    gputs(a, " dp（文字实际 ");
+    gnum(a, (unsigned long long)a->g.fp);
+    gputs(a, " px）");
     gputs(a, "\n网格       ");
     gnum(a, (unsigned long long)a->g.cols);
     gputs(a, " 列 x ");
@@ -481,10 +471,8 @@ static void page_prev(RfApp *a)
 /* 第 i 行的绘制盒：行高在行距槽位内**垂直居中**（行高 > 行距时盒向上溢出，字形中心仍在槽中心） */
 void rf_app_row_box(const RfApp *a, int i, int *y, int *h)
 {
-    int slot = a->g.body.y + i * a->g.rh;
-    int bh = a->g.bh;
-    if (y) *y = slot + (a->g.rh - bh) / 2;
-    if (h) *h = bh;
+    if (y) *y = a->g.body.y + i * a->g.rh;   /* 行容器顶 = 槽位顶 */
+    if (h) *h = a->g.rh;                     /* 行容器高度 */
 }
 
 /* y → 正文行号（0-based）；不在正文区返回 -1。点击与命中框都走这里 */
@@ -567,7 +555,9 @@ static int draw_text(RfApp *a, u16 *fb, int fw, int fh, const u8 *s, u64 n,
             if (rf_glyph_get(cp, px, &alpha, &gw, &gh)) {
                 int cellw = cc * a->g.wc * unit_num / unit_den;
                 cx = x0 + col * a->g.wc * unit_num / unit_den + (cellw - gw) / 2;
-                cy = y + (boxh - gh) / 2;
+                /* 文字在行容器内垂直居中；文字高于容器时顶部对齐容器顶，
+                 * 超出部分照常写入帧缓冲（不裁剪，允许压到下一行） */
+                cy = (gh > boxh) ? y : y + (boxh - gh) / 2;
                 blend(fb, fw, fh, alpha, gw, gh, cx, cy, color);
             }
         }
@@ -587,12 +577,12 @@ int rf_app_render(RfApp *a, u16 *fb, int fw, int fh)
 
     /* 顶栏：< + 标题（阅读书右侧显示进度） */
     {
-        int ty = a->g.top_bar.y + (a->g.rh - a->g.bh) / 2;
+        int ty = a->g.top_bar.y + (a->g.rh - a->g.rh) / 2;
         draw_text(a, fb, fw, fh, (const u8 *)"<", 1,
-                  a->g.top_bar.x, ty, a->g.fp, 1, 1, C_TITLE, 4, 0, a->g.bh);
+                  a->g.top_bar.x, ty, a->g.fp, 1, 1, C_TITLE, 4, 0, a->g.rh);
         draw_text(a, fb, fw, fh, (const u8 *)a->title, strlen(a->title),
                   a->g.top_bar.x + 2 * a->g.wc, ty, a->g.fp, 1, 1,
-                  C_TITLE, a->g.cols - 6, 0, a->g.bh);
+                  C_TITLE, a->g.cols - 6, 0, a->g.rh);
     }
     if (a->book == RF_BOOK_READER && a->data_len > 0) {
         char pb[16];
@@ -600,7 +590,7 @@ int rf_app_render(RfApp *a, u16 *fb, int fw, int fh)
         snprintf(pb, sizeof pb, "%llu%%", pct);
         draw_text(a, fb, fw, fh, (const u8 *)pb, strlen(pb),
                   a->g.top_bar.x + a->g.top_bar.w - (int)strlen(pb) * a->g.wc - a->g.wc,
-                  a->g.top_bar.y + (a->g.rh - a->g.bh) / 2, a->g.fp, 1, 1, C_DIM, 6, 0, a->g.bh);
+                  a->g.top_bar.y + (a->g.rh - a->g.rh) / 2, a->g.fp, 1, 1, C_DIM, 6, 0, a->g.rh);
     }
     fill(fb, fw, fh, a->g.top_bar.x, a->g.top_bar.y + a->g.rh - 1, a->g.top_bar.w, 1, C_SEP);
 
@@ -609,7 +599,7 @@ int rf_app_render(RfApp *a, u16 *fb, int fw, int fh)
         for (i = 0; i < a->g.rows; i++) {
             RfRow *r = &a->rows[i];
             int y = a->g.body.y + i * a->g.rh;
-            int num = 1, den = 1, px = a->g.fp, boxh = a->g.bh, boxy = y;
+            int num = 1, den = 1, px = a->g.fp, boxh = a->g.rh, boxy = y;
             u16 base = C_TEXT;
             if (r->kind == RF_ROW_BLANK) continue;
             if (r->kind == RF_ROW_TITLE1) { num = 2; den = 1; px = a->g.fp * 2; base = C_TITLE; }
@@ -632,8 +622,8 @@ int rf_app_render(RfApp *a, u16 *fb, int fw, int fh)
     if (a->bar[0])
         draw_text(a, fb, fw, fh, (const u8 *)a->bar, strlen(a->bar),
                   a->g.btn_bar.x + a->g.wc,
-                  a->g.btn_bar.y + (a->g.rh - a->g.bh) / 2, a->g.fp, 1, 1,
-                  C_BTN, a->g.cols, 0, a->g.bh);
+                  a->g.btn_bar.y + (a->g.rh - a->g.rh) / 2, a->g.fp, 1, 1,
+                  C_BTN, a->g.cols, 0, a->g.rh);
     /* 底栏下行：翻页行（左 <，右 >） */
     fill(fb, fw, fh, a->g.pager_bar.x, a->g.pager_bar.y, a->g.pager_bar.w, 1, C_SEP);
     {
@@ -642,11 +632,11 @@ int rf_app_render(RfApp *a, u16 *fb, int fw, int fh)
         const u8 *lt = (const u8 *)"<";
         const u8 *gt = (const u8 *)">";
         {
-            int py = a->g.pager_bar.y + (a->g.rh - a->g.bh) / 2;
+            int py = a->g.pager_bar.y + (a->g.rh - a->g.rh) / 2;
             draw_text(a, fb, fw, fh, lt, 1, a->g.pager_bar.x, py,
-                      a->g.fp, 1, 1, cprev, 4, 0, a->g.bh);
+                      a->g.fp, 1, 1, cprev, 4, 0, a->g.rh);
             draw_text(a, fb, fw, fh, gt, 1, a->g.pager_bar.x + a->g.pager_bar.w - a->g.wc,
-                      py, a->g.fp, 1, 1, cnext, 4, 0, a->g.bh);
+                      py, a->g.fp, 1, 1, cnext, 4, 0, a->g.rh);
         }
     }
     return 1;
@@ -714,8 +704,6 @@ static void do_action(RfApp *a, int act)
     }
     case ACT_FONT_DN: if (s->font_dp > RF_FONT_DP_MIN) s->font_dp--; goto regrid;
     case ACT_FONT_UP: if (s->font_dp < RF_FONT_DP_MAX) s->font_dp++; goto regrid;
-    case ACT_SP_DN:   if (s->line_pitch_dp > 0) s->line_pitch_dp -= 2; goto regrid;
-    case ACT_SP_UP:   if (s->line_pitch_dp < RF_PITCH_DP_MAX) s->line_pitch_dp += 2; goto regrid;
     case ACT_LH_DN:   if (s->line_height_dp > 0) s->line_height_dp -= 2; goto regrid;
     case ACT_LH_UP:   if (s->line_height_dp < RF_LINEHT_DP_MAX) s->line_height_dp += 2; goto regrid;
     case ACT_ML_DN:   if (s->m_left_dp > 0) { s->m_left_dp -= 2; s->m_right_dp = s->m_left_dp; } goto regrid;

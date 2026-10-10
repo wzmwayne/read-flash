@@ -125,7 +125,7 @@ static void check_grid(Rpt *r)
     static const int SH[7] = {320, 480, 800, 1280, 1920, 2560, 1080};
     static const int DN[5] = {1000, 1500, 2000, 2750, 3000};
     static const int FN[5] = {12, 16, 24, 32, 48};
-    static const int SP[4] = {0, 16, 24, 32};        /* 行距 dp，0 = 自动 */
+    static const int SP[4] = {0, 16, 24, 48};        /* 行高 dp，0 = 自动 */
     int combos = 0, bad0 = r->fails, skipped = 0, overflow = 0;
     size_t i;
     int d, f, s;
@@ -141,7 +141,7 @@ static void check_grid(Rpt *r)
 
         rf_settings_default(&st);
         st.font_dp = FN[f];
-        st.line_pitch_dp = SP[s];
+        st.line_height_dp = SP[s];
         rf_grid_build(&g, &st, SW[i], SH[i], DN[d]);
         combos++;
         if (g.rows > RF_MAX_ROWS) { skipped++; continue; }
@@ -149,7 +149,7 @@ static void check_grid(Rpt *r)
 
         snprintf(tag, sizeof tag, "%dx%d d=%d f=%d sp=%d", SW[i], SH[i], DN[d], FN[f], SP[s]);
 
-        if (g.fp < 1 || g.wc < 1 || g.rh < 1 || g.bh < 1 || g.cols < 1 || g.rows < 1)
+        if (g.fp < 1 || g.wc < 1 || g.rh < 1 || g.cols < 1 || g.rows < 1)
             fail(r, "%s: 基本量非正 (fp=%d wc=%d rh=%d C=%d V=%d)", tag, g.fp, g.wc, g.rh, g.cols, g.rows);
         if (g.wc != (g.fp + 1) / 2)
             fail(r, "%s: 半角列宽 != ceil(fp/2)", tag);
@@ -408,10 +408,10 @@ int rf_selftest(char *out, size_t outsz)
     m.truncate_scroll = 0;
     rf_grid_build(&g, &st, FB_W, FB_H, 2000);
 
-    rp(&r, "Read-Flash 最小验证（§16）  网格 %dx%d d=2000 字号 %ddp 行距 %ddp 行高 %ddp\n",
-       FB_W, FB_H, st.font_dp, st.line_pitch_dp, st.line_height_dp);
-    rp(&r, "C=%d 列  V=%d 行  半角列宽=%dpx  行距=%dpx  行高=%dpx  边距=(%d,%d,%d,%d)\n",
-       g.cols, g.rows, g.wc, g.rh, g.bh, g.m_top, g.m_bot, g.m_left, g.m_right);
+    rp(&r, "Read-Flash 最小验证（§16）  网格 %dx%d d=2000 字号 %ddp 行高 %ddp（0=自动）\n",
+       FB_W, FB_H, st.font_dp, st.line_height_dp);
+    rp(&r, "C=%d 列  V=%d 行  半角列宽=%dpx  行高(容器)=%dpx  边距=(%d,%d,%d,%d)\n",
+       g.cols, g.rows, g.wc, g.rh, g.m_top, g.m_bot, g.m_left, g.m_right);
 
     check_grid(&r);
 

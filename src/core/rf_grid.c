@@ -4,7 +4,6 @@
 void rf_settings_default(RfSettings *s)
 {
     s->font_dp = RF_FONT_DP_DEFAULT;
-    s->line_pitch_dp = 0;                 /* 自动：字号 × 1.2 */
     s->line_height_dp = RF_LINEHT_DP_DEFAULT;
     s->m_top_dp = s->m_bot_dp = s->m_left_dp = s->m_right_dp = RF_MARGIN_DP_DEFAULT;
 }
@@ -36,13 +35,10 @@ void rf_grid_build(RfGrid *g, const RfSettings *s,
     g->wc = (g->fp + 1) / 2;
     if (g->wc < 1) g->wc = 1;
 
-    /* 行距 = 相邻两行起点的距离（0 = 自动 = 字号 × 1.2）
-     * 行高 = 单行绘制盒高度（0 = 自动 = 字号） */
-    g->rh = (s->line_pitch_dp > 0) ? dp2px(s->line_pitch_dp, density)
-                                   : (g->fp * 1200 + 999) / 1000;
-    g->bh = (s->line_height_dp > 0) ? dp2px(s->line_height_dp, density) : g->fp;
+    /* 行高 = 行容器高度（0 = 自动 = 字号 × 1.2）；文本大小由字号决定，不受行高约束 */
+    g->rh = (s->line_height_dp > 0) ? dp2px(s->line_height_dp, density)
+                                    : (g->fp * 1200 + 999) / 1000;
     if (g->rh < 1) g->rh = 1;
-    if (g->bh < 1) g->bh = 1;
 
     /* 四向边距（像素） */
     g->m_top   = dp2px(s->m_top_dp,   density);
