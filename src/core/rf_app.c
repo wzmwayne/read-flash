@@ -682,6 +682,7 @@ int rf_app_render(RfApp *a, u16 *fb, int fw, int fh)
             int bold = 0, top_align = 0;
             u16 base = C_TEXT;
             if (r->kind == RF_ROW_BLANK) continue;
+            if (r->start_off > r->end_off || r->end_off > a->data_len) continue;  /* 行区间越界：丢弃 */
             if (r->kind == RF_ROW_TITLE1) {          /* #  ：2× 字号，真实占 2 行，顶部对齐 */
                 num = 2; den = 1; px = a->g.fp * 2; base = C_TITLE; bold = 1; top_align = 1;
             } else if (r->kind == RF_ROW_TITLE2) {   /* ## ：1.5× 字号，占 2 行，顶部对齐，下方留 0.5 行 */
@@ -784,6 +785,7 @@ static void do_action(RfApp *a, int act)
         a->nbooks = rf_books_scan(a->st, a->books, RF_MAX_BOOKS);
         snprintf(a->st->status, sizeof a->st->status, n > 0 ? "已导入 %d 本" : "导入目录里没有 .txt", n);
         gen_library(a);
+        a->laid = 0;                                 /* 内容变了：作废排版 */
         return;
     }
     case ACT_FONT_DN: if (s->font_dp > RF_FONT_DP_MIN) s->font_dp--; goto regrid;
@@ -803,12 +805,12 @@ static void do_action(RfApp *a, int act)
     case ACT_MT_DN:   if (s->m_top_dp > 0) { s->m_top_dp -= 2; s->m_bot_dp = s->m_top_dp; } goto regrid;
     case ACT_MT_UP:   if (s->m_top_dp < RF_MARGIN_DP_MAX) { s->m_top_dp += 2; s->m_bot_dp = s->m_top_dp; } goto regrid;
 regrid:
-        if (a->preview || s->live_edit) {            /* 预览中，或开启"实时修改" */
+        if (a->preview || s->live_edit) {            /* 预览中，或开启"实时修改"：网格也按新值重建 */
             rf_grid_build(&a->g, s, a->sw, a->sh, a->density);
             rf_glyph_reset();
-            a->laid = 0;
         }
         gen_settings(a);
+        a->laid = 0;                                 /* 正文内容变了，排版必须重新计算 */
         set_bar(a);
         snprintf(a->st->status, sizeof a->st->status,
                  s->live_edit ? "实时修改：已生效（保存后重启持久）"
@@ -971,6 +973,19 @@ int rf_app_body_hit(const RfApp *a, int i, int *x, int *y)
     if (x) *x = a->g.body.x + (a->hb[i].c0 + a->hb[i].c1) / 2 * a->g.wc;
     if (y) *y = a->g.body.y + (a->hb[i].row - 1) * a->g.rh + a->g.rh / 2;
     return a->hb[i].act;
+}
+
+/* 调试/自检：当前页所有有内容行的字节区间是否都落在正文内 */
+int rf_app_rows_valid(const RfApp *a)
+{
+    int i;
+    if (!a->laid) return 0;
+    for (i = 0; i < a->g.rows; i++) {
+        if (a->rows[i].kind == RF_ROW_BLANK) continue;
+        if (a->rows[i].start_off > a->rows[i].end_off) return 0;
+        if (a->rows[i].end_off > a->data_len) return 0;
+    }
+    return 1;
 }
 
 int rf_app_book_id(const RfApp *a) { return a->book; }

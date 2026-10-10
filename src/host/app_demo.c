@@ -240,6 +240,24 @@ int main(void)
         tap_back(a);                        /* 回书库 */
     }
 
+    /* 6.8) 乱码回归：内容长度变化后必须重新排版（此前的 bug：旧行区间指向新缓冲区） */
+    {
+        int v1, v2, v3;
+        tap_back(a);                        /* 回书库 */
+        tap_bar(a, 3);                      /* [设置] */
+        rf_app_render(a, fb, W, H);
+        v1 = rf_app_rows_valid(a);
+        tap_body_btn(a, 2);                 /* 取消"行高自动"（内容长度变化） */
+        rf_app_render(a, fb, W, H);
+        v2 = rf_app_rows_valid(a);
+        tap_body_btn(a, 2);                 /* 再勾回自动 */
+        rf_app_render(a, fb, W, H);
+        v3 = rf_app_rows_valid(a);
+        printf("  行区间有效: 初始=%d 取消自动后=%d 勾回自动后=%d\n", v1, v2, v3);
+        printf("  判定: 无乱码=%d\n", v1 && v2 && v3);
+        tap_back(a);
+    }
+
     /* 7) 退出并确认进度落盘 */
     rf_app_destroy(a);
     snprintf(cmd, sizeof cmd,

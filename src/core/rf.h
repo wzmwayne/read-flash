@@ -274,6 +274,8 @@ void   rf_app_destroy(RfApp *a);
  *   rf_app_row_at(y)  → y 落在第几行（-1 = 不在正文区） */
 void   rf_app_row_box(const RfApp *a, int i, int *y, int *h);
 int    rf_app_row_at(const RfApp *a, int y);
+/* 调试/自检：当前页行区间是否全部有效（防乱码回归） */
+int    rf_app_rows_valid(const RfApp *a);
 
 /* 宿主预览/自检用：暴露当前网格（字号变化后坐标会变，测试必须用它） */
 void   rf_app_metrics(const RfApp *a, int *sw, int *sh, int *wc, int *rh,
