@@ -83,6 +83,14 @@ adb install -r build/readflash.apk
 **判定顺序**：先看是否动了结构（改小版本），再看是否只是定义/语义或小修（改 `d` 后那位）。
 当前版本见 [VERSION](VERSION)（versionCode = 大*10000 + 小*100 + 次*10 + 修订位）。
 
+## iOS
+
+iOS 外壳见 [ios/README.md](ios/README.md)：C 核心与安卓完全共用，iOS 侧只提供 PAL——
+`Library/Application Support/ReadFlash` 存数据、`Documents/import` 作导入目录（配合
+`UIFileSharingEnabled` 会在"文件 → 我的 iPhone → Read-Flash"里可见），
+`[选择]` 走 `UIDocumentPickerViewController`，字形用 CoreText 光栅化。
+**注意：iOS 部分未在本机（Linux，无 Xcode）编译或测试。**
+
 ## 网络策略
 
 | 场景 | 方式 |

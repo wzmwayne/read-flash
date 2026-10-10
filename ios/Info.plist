@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>            <string>Read-Flash</string>
+    <key>CFBundleIdentifier</key>      <string>com.readflash.app</string>
+    <key>CFBundleShortVersionString</key> <string>0.1.12</string>
+    <key>CFBundleVersion</key>         <string>1</string>
+    <key>UILaunchStoryboardName</key>  <string></string>
+    <!-- 让应用目录出现在 文件 App → 我的 iPhone → Read-Flash（导入目录 Documents/import 可见） -->
+    <key>UIFileSharingEnabled</key>            <true/>
+    <key>LSSupportsOpeningDocumentsInPlace</key><true/>
+    <key>UISupportedInterfaceOrientations</key>
+    <array><string>UIInterfaceOrientationPortrait</string></array>
+    <key>UIRequiresFullScreen</key>    <true/>
+</dict>
+</plist>
