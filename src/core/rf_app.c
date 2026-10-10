@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <dirent.h>
+#include <limits.h>
 #include <strings.h>
 
 /* RGB565 默认色表（v3.4 §6） */
@@ -442,7 +443,7 @@ static int scan_import_dir(RfApp *a)
 static void gen_import(RfApp *a)
 {
     const char *dir = pal_import_dir();
-    char fallback[600];
+    char fallback[600], real[PATH_MAX];
     int i;
     char id[24];
     ginit(a);
@@ -450,7 +451,9 @@ static void gen_import(RfApp *a)
         snprintf(fallback, sizeof fallback, "%s/import", pal_app_data_dir());
         dir = fallback;
     }
-    gputs(a, "导入目录\n");
+    /* 显示**真实绝对路径**（规范化符号链接与 ..；目录不存在时退回原值） */
+    if (realpath(dir, real)) dir = real;
+    gputs(a, "导入目录（绝对路径）\n");
     gputs(a, dir);
     gputs(a, "\n\n");
     if (a->imp_n == 0) {

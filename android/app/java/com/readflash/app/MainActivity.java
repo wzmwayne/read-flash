@@ -148,10 +148,18 @@ public class MainActivity extends Activity {
         super.onCreate(saved);
         inst = this;
         density = (int) (getResources().getDisplayMetrics().density * 1000);
-        String dataDir = getFilesDir().getAbsolutePath();
-        importDir = getExternalFilesDir(null) != null
-                ? getExternalFilesDir(null).getAbsolutePath() + "/import"
-                : dataDir + "/import";
+        String dataDir;
+        try {
+            dataDir = getFilesDir().getCanonicalPath();
+        } catch (Exception e) {
+            dataDir = getFilesDir().getAbsolutePath();
+        }
+        File ext = getExternalFilesDir(null);
+        try {
+            importDir = (ext != null ? ext.getCanonicalPath() : dataDir) + "/import";
+        } catch (Exception e) {
+            importDir = (ext != null ? ext.getAbsolutePath() : dataDir) + "/import";
+        }
         nativeInit(dataDir, importDir, density);
         view = new RailView(this);
         view.setBackgroundColor(0xFF000000);
