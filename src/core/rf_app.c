@@ -34,7 +34,9 @@ enum {
 struct RfApp {
     RfStore *st;
     int sw, sh, density;
-    RfGrid g;
+    RfGrid g;          /* 当前生效网格：平时 = settingsSaved；预览时 = editing */
+    RfGrid g_saved;    /* 进入预览前的生效网格备份 */
+    RfSettings editing;/* settingsCurrent：设置书里编辑中的值，只影响预览 */
     RfMode mode;
 
     int book;
@@ -205,7 +207,7 @@ static void gen_tutorial(RfApp *a)
 
 static void gen_settings(RfApp *a)
 {
-    RfSettings *s = &a->st->settings;
+    RfSettings *s = &a->editing;
     ginit(a);
     if (a->preview) {
         gputs(a, "预览（示例文本）\n\n");
@@ -257,7 +259,7 @@ static void gen_settings(RfApp *a)
         gbtn(a, ACT_MT_UP, "+");
         gputs(a, "      （dp，0 - 64）\n\n");
 
-        gputs(a, "改动在保存前只影响当前预览；返回不保存。\n");
+        gputs(a, "改动只作用于 [预览]；[保存] 写入配置，重启后全应用生效。\n");
     }
     a->data = (const u8 *)a->gen;
     a->data_len = a->gen_len;
@@ -413,16 +415,21 @@ static void open_book(RfApp *a, int book)
         rf_progress_save(a->st, a->id, a->line, a->off, a->data_len);
     if (a->data && a->data != (const u8 *)a->gen) { free((void *)a->data); a->data = NULL; }
 
+    if (a->preview && book != RF_BOOK_SETTINGS) { a->g = a->g_saved; a->preview = 0; }
     a->book = book;
     a->line = 1;
     a->off = 0;
     a->laid = 0;
-    a->preview = 0;
 
     switch (book) {
     case RF_BOOK_READER:  load_reader(a, prev_id); break;
     case RF_BOOK_TUTORIAL: gen_tutorial(a); snprintf(a->title, sizeof a->title, "阅读器-应用使用教程"); break;
-    case RF_BOOK_SETTINGS: gen_settings(a); snprintf(a->title, sizeof a->title, "设置"); break;
+    case RF_BOOK_SETTINGS:
+        if (a->preview) { a->g = a->g_saved; a->preview = 0; }   /* 离开预览：恢复生效网格 */
+        a->editing = a->st->settings;                            /* 进入设置 → 编辑值 = 已保存值 */
+        gen_settings(a);
+        snprintf(a->title, sizeof a->title, "设置");
+        break;
     case RF_BOOK_DEBUG:    gen_debug(a);    snprintf(a->title, sizeof a->title, "调试"); break;
     case RF_BOOK_DIALOG:   gen_dialog(a);   snprintf(a->title, sizeof a->title, "提示"); break;
     default:               gen_library(a);  snprintf(a->title, sizeof a->title, "书库"); break;
@@ -467,6 +474,27 @@ static void page_prev(RfApp *a)
         a->line = 1;
         layout(a);
     }
+}
+
+/* ---------------- 行与坐标的唯一换算（渲染/点击共用） ---------------- */
+
+/* 第 i 行的绘制盒：行高在行距槽位内**垂直居中**（行高 > 行距时盒向上溢出，字形中心仍在槽中心） */
+void rf_app_row_box(const RfApp *a, int i, int *y, int *h)
+{
+    int slot = a->g.body.y + i * a->g.rh;
+    int bh = a->g.bh;
+    if (y) *y = slot + (a->g.rh - bh) / 2;
+    if (h) *h = bh;
+}
+
+/* y → 正文行号（0-based）；不在正文区返回 -1。点击与命中框都走这里 */
+int rf_app_row_at(const RfApp *a, int y)
+{
+    int row;
+    if (y < a->g.body.y || y >= a->g.body.y + a->g.body.h) return -1;
+    row = (y - a->g.body.y) / a->g.rh;
+    if (row < 0 || row >= a->g.rows) return -1;
+    return row;
 }
 
 /* ---------------- 渲染 ---------------- */
@@ -558,18 +586,21 @@ int rf_app_render(RfApp *a, u16 *fb, int fw, int fh)
     memset(fb, 0, (size_t)fw * (size_t)fh * 2);
 
     /* 顶栏：< + 标题（阅读书右侧显示进度） */
-    draw_text(a, fb, fw, fh, (const u8 *)"<", 1,
-              a->g.top_bar.x, a->g.top_bar.y, a->g.fp, 1, 1, C_TITLE, 4, 0, a->g.bh);
-    draw_text(a, fb, fw, fh, (const u8 *)a->title, strlen(a->title),
-              a->g.top_bar.x + 2 * a->g.wc, a->g.top_bar.y, a->g.fp, 1, 1,
-              C_TITLE, a->g.cols - 6, 0, a->g.bh);
+    {
+        int ty = a->g.top_bar.y + (a->g.rh - a->g.bh) / 2;
+        draw_text(a, fb, fw, fh, (const u8 *)"<", 1,
+                  a->g.top_bar.x, ty, a->g.fp, 1, 1, C_TITLE, 4, 0, a->g.bh);
+        draw_text(a, fb, fw, fh, (const u8 *)a->title, strlen(a->title),
+                  a->g.top_bar.x + 2 * a->g.wc, ty, a->g.fp, 1, 1,
+                  C_TITLE, a->g.cols - 6, 0, a->g.bh);
+    }
     if (a->book == RF_BOOK_READER && a->data_len > 0) {
         char pb[16];
         unsigned long long pct = a->off * 100ull / a->data_len;
         snprintf(pb, sizeof pb, "%llu%%", pct);
         draw_text(a, fb, fw, fh, (const u8 *)pb, strlen(pb),
                   a->g.top_bar.x + a->g.top_bar.w - (int)strlen(pb) * a->g.wc - a->g.wc,
-                  a->g.top_bar.y, a->g.fp, 1, 1, C_DIM, 6, 0, a->g.bh);
+                  a->g.top_bar.y + (a->g.rh - a->g.bh) / 2, a->g.fp, 1, 1, C_DIM, 6, 0, a->g.bh);
     }
     fill(fb, fw, fh, a->g.top_bar.x, a->g.top_bar.y + a->g.rh - 1, a->g.top_bar.w, 1, C_SEP);
 
@@ -587,8 +618,8 @@ int rf_app_render(RfApp *a, u16 *fb, int fw, int fh)
             if (r->kind == RF_ROW_TITLE1 || r->kind == RF_ROW_TITLE2) {
                 boxy = y;                        /* 标题块贴顶，占两个行距槽位 */
                 boxh = 2 * a->g.rh;
-            } else if (a->g.rh > a->g.bh) {
-                boxy = y + (a->g.rh - a->g.bh) / 2;   /* 行高 < 行距：盒在槽内居中 */
+            } else {
+                rf_app_row_box(a, i, &boxy, &boxh);   /* 与点击共用同一公式 */
             }
             draw_text(a, fb, fw, fh, a->data + r->start_off, r->end_off - r->start_off,
                       a->g.body.x, boxy, px, num, den, base, a->g.cols,
@@ -600,7 +631,8 @@ int rf_app_render(RfApp *a, u16 *fb, int fw, int fh)
     fill(fb, fw, fh, a->g.btn_bar.x, a->g.btn_bar.y, a->g.btn_bar.w, 1, C_SEP);
     if (a->bar[0])
         draw_text(a, fb, fw, fh, (const u8 *)a->bar, strlen(a->bar),
-                  a->g.btn_bar.x + a->g.wc, a->g.btn_bar.y, a->g.fp, 1, 1,
+                  a->g.btn_bar.x + a->g.wc,
+                  a->g.btn_bar.y + (a->g.rh - a->g.bh) / 2, a->g.fp, 1, 1,
                   C_BTN, a->g.cols, 0, a->g.bh);
     /* 底栏下行：翻页行（左 <，右 >） */
     fill(fb, fw, fh, a->g.pager_bar.x, a->g.pager_bar.y, a->g.pager_bar.w, 1, C_SEP);
@@ -609,10 +641,13 @@ int rf_app_render(RfApp *a, u16 *fb, int fw, int fh)
         u16 cnext = (a->laid && rf_can_next(&a->page)) ? C_DIM : C_DIS;
         const u8 *lt = (const u8 *)"<";
         const u8 *gt = (const u8 *)">";
-        draw_text(a, fb, fw, fh, lt, 1, a->g.pager_bar.x, a->g.pager_bar.y,
-                  a->g.fp, 1, 1, cprev, 4, 0, a->g.bh);
-        draw_text(a, fb, fw, fh, gt, 1, a->g.pager_bar.x + a->g.pager_bar.w - a->g.wc,
-                  a->g.pager_bar.y, a->g.fp, 1, 1, cnext, 4, 0, a->g.bh);
+        {
+            int py = a->g.pager_bar.y + (a->g.rh - a->g.bh) / 2;
+            draw_text(a, fb, fw, fh, lt, 1, a->g.pager_bar.x, py,
+                      a->g.fp, 1, 1, cprev, 4, 0, a->g.bh);
+            draw_text(a, fb, fw, fh, gt, 1, a->g.pager_bar.x + a->g.pager_bar.w - a->g.wc,
+                      py, a->g.fp, 1, 1, cnext, 4, 0, a->g.bh);
+        }
     }
     return 1;
 }
@@ -621,7 +656,7 @@ int rf_app_render(RfApp *a, u16 *fb, int fw, int fh)
 
 static void do_action(RfApp *a, int act)
 {
-    RfSettings *s = &a->st->settings;
+    RfSettings *s = &a->editing;
     switch (act) {
     case ACT_BACK:
         if (a->book == RF_BOOK_DIALOG) { a->dlg_active = 0; open_book(a, RF_BOOK_LIBRARY); return; }
@@ -688,19 +723,32 @@ static void do_action(RfApp *a, int act)
     case ACT_MT_DN:   if (s->m_top_dp > 0) { s->m_top_dp -= 2; s->m_bot_dp = s->m_top_dp; } goto regrid;
     case ACT_MT_UP:   if (s->m_top_dp < RF_MARGIN_DP_MAX) { s->m_top_dp += 2; s->m_bot_dp = s->m_top_dp; } goto regrid;
 regrid:
-        rf_grid_build(&a->g, s, a->sw, a->sh, a->density);
+        if (a->preview) {                            /* 只有预览才按新值重排 */
+            rf_grid_build(&a->g, s, a->sw, a->sh, a->density);
+            rf_glyph_reset();
+            a->laid = 0;
+        }
+        gen_settings(a);
+        set_bar(a);
+        snprintf(a->st->status, sizeof a->st->status, "改动仅预览，保存并重启后生效");
+        return;
+    case ACT_PREVIEW:
+        if (!a->preview) {                           /* 进入预览：按 editing 建网格 */
+            a->g_saved = a->g;
+            rf_grid_build(&a->g, &a->editing, a->sw, a->sh, a->density);
+            a->preview = 1;
+        } else {                                     /* 退出预览：恢复生效网格 */
+            a->g = a->g_saved;
+            a->preview = 0;
+        }
         rf_glyph_reset();
         a->laid = 0;
         gen_settings(a);
         set_bar(a);
         return;
-    case ACT_PREVIEW:
-        a->preview = !a->preview;
-        gen_settings(a);
-        return;
     case ACT_SAVE:
-        rf_settings_save(a->st);
-        snprintf(a->st->status, sizeof a->st->status, "设置已保存");
+        rf_settings_save(a->st, &a->editing);        /* 写盘；当前会话仍用旧值 */
+        snprintf(a->st->status, sizeof a->st->status, "已保存，重启后生效");
         return;
     case ACT_DEBUG:   open_book(a, RF_BOOK_DEBUG); return;
     case ACT_REBUILD:
@@ -741,9 +789,9 @@ void rf_app_tap(RfApp *a, int x, int y)
         return;
     }
     {
-        int row = (y - a->g.body.y) / a->g.rh;
+        int row = rf_app_row_at(a, y);
         int col = (x - a->g.body.x) / a->g.wc;
-        if (row < 0 || row >= a->g.rows) return;
+        if (row < 0) return;
         for (i = 0; i < a->nhb; i++) {
             if (a->hb[i].row == row + 1 && col >= a->hb[i].c0 && col < a->hb[i].c1) {
                 do_action(a, a->hb[i].act);
@@ -777,6 +825,7 @@ RfApp *rf_app_create(RfStore *st, int screen_w, int screen_h, int density)
     a->gen_cap = 64 * 1024;
     a->gen = (char *)malloc(a->gen_cap);
     a->mode.truncate_scroll = 0;
+    a->editing = st->settings;
     rf_grid_build(&a->g, &st->settings, screen_w, screen_h, density);
     a->nbooks = rf_books_scan(st, a->books, RF_MAX_BOOKS);
     a->sel = 0;
@@ -791,7 +840,7 @@ void rf_app_resize(RfApp *a, int screen_w, int screen_h, int density)
     a->sw = screen_w;
     a->sh = screen_h;
     a->density = density;
-    rf_grid_build(&a->g, &a->st->settings, screen_w, screen_h, density);
+    rf_grid_build(&a->g, a->preview ? &a->editing : &a->st->settings, screen_w, screen_h, density);
     rf_glyph_reset();
     a->laid = 0;
     if (a->book != RF_BOOK_READER && a->book != RF_BOOK_TUTORIAL) {

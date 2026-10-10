@@ -232,7 +232,7 @@ typedef struct {
 
 void rf_store_init(RfStore *st, const char *root);
 int  rf_settings_load(RfStore *st);
-int  rf_settings_save(RfStore *st);
+int  rf_settings_save(RfStore *st, const RfSettings *s);   /* 只写配置，不改当前生效设置 */
 int  rf_books_scan(RfStore *st, RfBookEnt *out, int max);
 int  rf_book_import(RfStore *st, const char *src_path, char *out_id, size_t cap);
 int  rf_book_delete(RfStore *st, const char *id);
@@ -263,6 +263,12 @@ void   rf_app_key_back(RfApp *a);
 /* 渲染到 RGB565 帧缓冲（尺寸须与 app 的屏幕尺寸一致）；返回 1 表示画面有变化 */
 int    rf_app_render(RfApp *a, u16 *fb, int fw, int fh);
 void   rf_app_destroy(RfApp *a);
+
+/* 行与坐标的**唯一**换算（渲染与点击必须共用，防止两者不一致）：
+ *   rf_app_row_box(i) → 第 i 行的绘制盒（槽内居中，行高>行距时允许向上溢出）
+ *   rf_app_row_at(y)  → y 落在第几行（-1 = 不在正文区） */
+void   rf_app_row_box(const RfApp *a, int i, int *y, int *h);
+int    rf_app_row_at(const RfApp *a, int y);
 
 /* 宿主预览/自检用：暴露当前网格（字号变化后坐标会变，测试必须用它） */
 void   rf_app_metrics(const RfApp *a, int *sw, int *sh, int *wc, int *rh,

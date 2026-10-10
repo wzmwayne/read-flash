@@ -167,18 +167,18 @@ int rf_settings_load(RfStore *st)
     return 0;
 }
 
-int rf_settings_save(RfStore *st)
+int rf_settings_save(RfStore *st, const RfSettings *s)
 {
     char buf[256], p[700];
     size_t off = 0;
     off = put_str(buf, off, "RFSET002");
-    off = put_hex(buf, off, (u64)st->settings.font_dp, 4);
-    off = put_hex(buf, off, (u64)st->settings.line_pitch_dp, 4);
-    off = put_hex(buf, off, (u64)st->settings.line_height_dp, 4);
-    off = put_hex(buf, off, (u64)st->settings.m_top_dp, 4);
-    off = put_hex(buf, off, (u64)st->settings.m_bot_dp, 4);
-    off = put_hex(buf, off, (u64)st->settings.m_left_dp, 4);
-    off = put_hex(buf, off, (u64)st->settings.m_right_dp, 4);
+    off = put_hex(buf, off, (u64)s->font_dp, 4);
+    off = put_hex(buf, off, (u64)s->line_pitch_dp, 4);
+    off = put_hex(buf, off, (u64)s->line_height_dp, 4);
+    off = put_hex(buf, off, (u64)s->m_top_dp, 4);
+    off = put_hex(buf, off, (u64)s->m_bot_dp, 4);
+    off = put_hex(buf, off, (u64)s->m_left_dp, 4);
+    off = put_hex(buf, off, (u64)s->m_right_dp, 4);
     off = put_hex(buf, off, (u64)rf_crc32((const u8 *)buf, off), 8);
     join(p, sizeof p, st->root, "config");
     return write_atomic(p, buf, off);

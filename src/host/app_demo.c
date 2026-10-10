@@ -151,9 +151,41 @@ int main(void)
     tap_center(a, 40, H / 2);                  /* 上一页 */
     step(a, "阅读 P3(上一页)", "/tmp/11-reader-prev.ppm");
 
-    /* 6) 退出并确认进度落盘 */
+    /* 6) 设置语义回归：编辑只影响预览 → 保存 → 重启才生效 */
+    {
+        int wc0, rh0, wc1, rh1, wc2, rh2, wc3, rh3, wc4, rh4;
+        int c0, c1, c2, c3, c4, r0, r1, r2, r3, r4, sw, sh, bx, by, bary;
+        tap_back(a);                       /* 回到书库 */
+        tap_bar(a, 3);                     /* [设置] */
+        rf_app_metrics(a, &sw, &sh, &wc0, &rh0, &c0, &r0, &bx, &by, &bary);
+        tap_body_btn(a, 1);                /* 字号 +1（仅编辑） */
+        rf_app_metrics(a, &sw, &sh, &wc1, &rh1, &c1, &r1, &bx, &by, &bary);
+        printf("  编辑后（应不变）: wc %d→%d  rh %d→%d\n", wc0, wc1, rh0, rh1);
+        tap_bar(a, 0);                     /* [预览] */
+        rf_app_metrics(a, &sw, &sh, &wc2, &rh2, &c2, &r2, &bx, &by, &bary);
+        printf("  预览中（应变）  : wc %d→%d  rh %d→%d\n", wc0, wc2, rh0, rh2);
+        tap_bar(a, 1);                     /* [保存] */
+        tap_back(a);                       /* 回书库：应恢复生效网格 */
+        rf_app_metrics(a, &sw, &sh, &wc3, &rh3, &c3, &r3, &bx, &by, &bary);
+        printf("  返回书库（应恢复）: wc %d→%d  rh %d→%d\n", wc2, wc3, rh2, rh3);
+        rf_app_destroy(a);
+        rf_settings_load(&st);             /* 模拟重启：重新读配置 */
+        a = rf_app_create(&st, W, H, DENS);
+        rf_app_metrics(a, &sw, &sh, &wc4, &rh4, &c4, &r4, &bx, &by, &bary);
+        printf("  重启后（应生效）  : wc %d (期望 %d)  rh %d (期望 %d)\n",
+               wc4, wc2, rh4, rh2);
+        printf("  判定: 编辑不影响=%d 预览生效=%d 返回恢复=%d 重启生效=%d\n",
+               wc0 == wc1 && rh0 == rh1,
+               wc2 != wc0 || rh2 != rh0,
+               wc3 == wc0 && rh3 == rh0,
+               wc4 == wc2 && rh4 == rh2);
+    }
+
+    /* 7) 退出并确认进度落盘 */
     rf_app_destroy(a);
-    snprintf(cmd, sizeof cmd, "ls -l /tmp/rfapp/book/*/ | head -20; echo ---; cat /tmp/rfapp/book/*/.progress | head -8");
+    snprintf(cmd, sizeof cmd,
+             "echo '--- 配置（实时保存）---'; cat /tmp/rfapp/config; "
+             "echo '--- 进度 ---'; cat /tmp/rfapp/book/*/.progress | head -3");
     printf("== 落盘内容 ==\n");
     fflush(stdout);
     if (system(cmd) != 0) printf("(列目录失败)\n");
