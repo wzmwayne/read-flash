@@ -13,7 +13,7 @@ static u8        g_pool[G_POOL];
 static size_t    g_used;
 static int       g_n;
 static struct { u32 cp; int px, flags, w, h; size_t off; } g_slot[G_SLOTS];
-static u8        g_tmp[64 * 64];
+static u8        g_tmp[RF_GLYPH_MAX * RF_GLYPH_MAX];
 
 void rf_glyph_set_provider(RfGlyphFn fn, void *ud)
 {
@@ -45,7 +45,7 @@ int rf_glyph_get(u32 cp, int px, int flags, const u8 **alpha, int *w, int *h)
     {
         int gw = 0, gh = 0;
         if (!g_fn(g_ud, cp, px, flags, g_tmp, (int)sizeof g_tmp, &gw, &gh)) return 0;
-        if (gw <= 0 || gh <= 0 || gw > 64 || gh > 64) return 0;
+        if (gw <= 0 || gh <= 0 || gw > RF_GLYPH_MAX || gh > RF_GLYPH_MAX) return 0;
         if ((size_t)(gw * gh) > sizeof g_tmp) return 0;
         if (g_n >= G_SLOTS || g_used + (size_t)(gw * gh) > G_POOL) {
             g_used = 0;
@@ -77,8 +77,8 @@ int rf_glyph_builtin(void *ud, u32 cp, int px, int flags, u8 *alpha, int cap, in
     (void)flags;
     if (w < 2) w = 2;
     if (h < 2) h = 2;
-    if (w > 64) w = 64;
-    if (h > 64) h = 64;
+    if (w > RF_GLYPH_MAX) w = RF_GLYPH_MAX;
+    if (h > RF_GLYPH_MAX) h = RF_GLYPH_MAX;
     if ((size_t)(w * h) > (size_t)cap) return 0;
     memset(alpha, 0, (size_t)(w * h));
     for (y = 1; y < h - 1; y++)

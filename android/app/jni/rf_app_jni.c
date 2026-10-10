@@ -86,7 +86,7 @@ Java_com_readflash_app_MainActivity_nativeInit(JNIEnv *env, jclass cls,
     (*env)->GetJavaVM(env, &g_vm);
     g_cls = (jclass)(*env)->NewGlobalRef(env, cls);
     g_mid_glyph = (*env)->GetStaticMethodID(env, g_cls, "glyph", "(III[B)I");
-    g_alpha = (jbyteArray)(*env)->NewGlobalRef(env, (*env)->NewByteArray(env, 64 * 64));
+    g_alpha = (jbyteArray)(*env)->NewGlobalRef(env, (*env)->NewByteArray(env, RF_GLYPH_MAX * RF_GLYPH_MAX));
 
     d = (*env)->GetStringUTFChars(env, dataDir, NULL);
     i = (*env)->GetStringUTFChars(env, importDir, NULL);

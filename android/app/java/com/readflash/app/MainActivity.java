@@ -47,7 +47,7 @@ public class MainActivity extends Activity {
 
     private static native void nativeOnPicked(int n);
 
-    private static final int MAX_GLYPH = 64;
+    private static final int MAX_GLYPH = 256;
     private static final Paint PAINT = new Paint(Paint.ANTI_ALIAS_FLAG);
     private static final HashMap<Integer, Bitmap> CACHE = new HashMap<Integer, Bitmap>();
     private static byte[] alpha = new byte[MAX_GLYPH * MAX_GLYPH];

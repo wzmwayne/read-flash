@@ -68,8 +68,8 @@ int rf_glyph_ft(void *ud, u32 cp, int px, int flags, u8 *alpha, int cap, int *gw
             *gh = 1;
             return 1;
         }
-        if (w > 64) w = 64;
-        if (h > 64) h = 64;
+        if (w > RF_GLYPH_MAX) w = RF_GLYPH_MAX;
+        if (h > RF_GLYPH_MAX) h = RF_GLYPH_MAX;
         if (w * h > cap) return 0;
         for (y = 0; y < h; y++) {
             const unsigned char *src = bm->buffer + (size_t)y * bm->pitch;

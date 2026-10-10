@@ -18,6 +18,9 @@ typedef int64_t  i64;
 /* 一页最多支持的渲染行数（2400px / 19px ≈ 126） */
 #define RF_MAX_ROWS 160
 
+/* 单个字形位图的最大边长（px）：标题 2× 字号，需留足余量 */
+#define RF_GLYPH_MAX 256
+
 /* 版本号（由构建脚本注入 -DRF_VERSION，缺省值用于宿主构建） */
 #ifndef RF_VERSION
 #define RF_VERSION "0.1.1d1"
