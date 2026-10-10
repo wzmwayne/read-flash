@@ -204,6 +204,14 @@ int main(void)
     tap_center(a, 40, H / 2);                  /* 上一页 */
     step(a, "阅读 P3(上一页)", "/tmp/11-reader-prev.ppm");
 
+    {   /* 多章节语料：目录会超过一页，用于验证目录翻页后的颜色/条目 */
+        system("cp -f /tmp/testbook.txt '/tmp/rfapp/import/原神：具现之魔神.txt'");
+        tap_bar(a, 2);                       /* [导入] → 导入页 */
+        tap_bar(a, 1);                       /* [导入这些] */
+        tap_bar(a, 0);                       /* 结果提示框 [确定] */
+        printf("  导入 many.txt 后书数=%d\n", rf_app_book_count(a));
+    }
+
     /* 5.5) 翻页行点击：左右键必须真的翻页（此前被 enabled 缓存卡死） */
     {
         int sw, sh, wc, rh, cols, rows, bx, by, bary;
@@ -220,6 +228,23 @@ int main(void)
         h2 = 0; for (i2 = 0; i2 < W * H; i2++) h2 = h2 * 131 + fb[i2];
         printf("  翻页键: 右键换页=%d 左键回退=%d\n", h1 != h0, h2 != h1);
         printf("  判定: 翻页键可用=%d\n", (h1 != h0) && (h2 != h1));
+    }
+
+    /* 5.55) 多章节目录：翻页前后颜色与条目 */
+    {
+        int sw, sh, wc, rh, cols, rows, bx, by, bary;
+        rf_app_metrics(a, &sw, &sh, &wc, &rh, &cols, &rows, &bx, &by, &bary);
+        tap_back(a);                         /* 回书库 */
+        tap_body_row(a, 6);                  /* 第 3 项 = many（60 章） */
+        tap_bar(a, 0);                       /* [打开] */
+        tap_bar(a, 0);                       /* [目录] */
+        rf_app_render(a, fb, W, H);
+        dump("/tmp/20-toc-p1.ppm");
+        printf("  多章目录 第1页 条目=%d\n", rf_app_toc_count(a));
+        rf_app_tap(a, W - 40, H - rh - 4);   /* 目录翻页行右键 */
+        rf_app_render(a, fb, W, H);
+        dump("/tmp/21-toc-p2.ppm");
+        printf("  多章目录 第2页 条目=%d\n", rf_app_toc_count(a));
     }
 
     /* 5.6) 目录：阅读底栏 [目录] → 目录页（扁平、含 # 原文）→ 点条目跳转回阅读 */

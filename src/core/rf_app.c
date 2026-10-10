@@ -648,11 +648,22 @@ static u64 line_to_off(const u8 *data, u64 len, u64 line)
     return i;
 }
 
+/* 清掉上一页留下的目录条目组件（comp_reg 只按 id 更新，不会自动移除） */
+static void clear_toc_comps(RfApp *a)
+{
+    int i, w = 0;
+    for (i = 0; i < a->ncomp; i++)
+        if (!(a->comp[i].band == RF_BAND_BODY && a->comp[i].act == ACT_TOC_JUMP))
+            a->comp[w++] = a->comp[i];
+    a->ncomp = w;
+}
+
 static void bind_toc_comps(RfApp *a)
 {
     int i, k, cur;
     char id[24];
     if (a->book != RF_BOOK_TOC) return;
+    clear_toc_comps(a);                      /* 换页先清旧条目：否则上一页的行号会与新页撞车 */
     cur = cur_chapter(a);                    /* 每次绑定都重算状态：正在读/已读/未读 */
     for (i = 0; i < a->g.rows && i < RF_MAX_ROWS; i++) {
         int src = (int)a->rows[i].line;                 /* 该渲染行的源行号 */
@@ -1238,7 +1249,12 @@ static void do_action(RfApp *a, int act)
     case ACT_IMPORT: {                           /* 进入导入页面（私有导入目录 + 复选） */
         static int first = 1;
         scan_import_dir(a);
-        if (first) { int k; for (k = 0; k < 64; k++) a->imp_checked[k] = 1; first = 0; }
+        {   /* 进导入页默认全选：首次进入、或上次没勾任何项时 */
+            int k, any = 0;
+            (void)first;
+            for (k = 0; k < a->imp_n; k++) if (a->imp_checked[k]) any = 1;
+            if (!any) for (k = 0; k < a->imp_n; k++) a->imp_checked[k] = 1;
+        }
         stack_push(a, RF_BOOK_IMPORT);
         return;
     }
@@ -1486,6 +1502,7 @@ int rf_app_comp_dups(const RfApp *a) { return a->comp_dup; }
 const char *rf_app_dialog_text(const RfApp *a) { return a->dlg; }
 int rf_app_last_action(const RfApp *a) { return a->last_act; }
 int rf_app_toc_count(const RfApp *a) { return a->toc_n; }
+int rf_app_book_count(const RfApp *a) { return a->nbooks; }
 int rf_app_cur_line(const RfApp *a) { return (int)a->line; }
 int rf_app_first_row_line(const RfApp *a)
 {
