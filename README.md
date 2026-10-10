@@ -91,6 +91,14 @@ iOS 外壳见 [ios/README.md](ios/README.md)：C 核心与安卓完全共用，i
 `[选择]` 走 `UIDocumentPickerViewController`，字形用 CoreText 光栅化。
 **注意：iOS 部分未在本机（Linux，无 Xcode）编译或测试。**
 
+## 网页转换器（GitHub Pages）
+
+[index.html](index.html) 在浏览器本地把 TXT / EPUB2 / EPUB3 转成可导入格式
+（章节前插换页符 `---`、标题加 `##`、标题去重），不上传文件、无外部依赖。
+
+- 在线：<https://wzmwayne.github.io/read-flash/>（仓库已开启 Pages，源 = main 根目录）
+- 本地：浏览器直接打开 `index.html` 亦可
+
 ## 网络策略
 
 | 场景 | 方式 |
