@@ -1,0 +1,23 @@
+# 构建产物
+build/
+
+# 本机调试密钥（勿入库）
+*.keystore
+*.jks
+
+# 目标文件与中间产物
+*.o
+*.a
+*.so
+*.d
+*.apk
+*.ap_
+*.dex
+*.class
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store

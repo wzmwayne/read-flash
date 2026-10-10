@@ -1,0 +1,183 @@
+/* Read-Flash core —— 公共类型与 API
+ * 规范：docs/Read-Flash-v3.4-修订条文.md
+ * 约定：全程整数运算，不使用浮点（v3.3 P4）；宽度单位 = 半角列。
+ */
+#ifndef RF_H
+#define RF_H
+
+#include <stdint.h>
+#include <stddef.h>
+
+typedef uint8_t  u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+typedef uint64_t u64;
+typedef int32_t  i32;
+typedef int64_t  i64;
+
+/* 一页最多支持的渲染行数（2400px / 19px ≈ 126） */
+#define RF_MAX_ROWS 160
+
+/* ---------------- 设置（§4.1） ---------------- */
+#define RF_FONT_DP_MIN       12
+#define RF_FONT_DP_MAX       48
+#define RF_FONT_DP_DEFAULT   16
+#define RF_SPACING_MIN       1000   /* ‰，1.0x */
+#define RF_SPACING_MAX       3000
+#define RF_SPACING_DEFAULT   1200
+#define RF_MARGIN_DP_MAX     64
+#define RF_MARGIN_DP_DEFAULT 8
+
+typedef struct {
+    int font_dp;            /* 字号，dp，整数 */
+    int spacing_permille;   /* 行距，‰（1200 = 1.2） */
+    int m_top_dp, m_bot_dp, m_left_dp, m_right_dp;
+} RfSettings;
+
+void rf_settings_default(RfSettings *s);
+
+/* ---------------- 网格（§4.2） ---------------- */
+typedef struct { int x, y, w, h; } RfRect;
+
+typedef struct {
+    int screen_w, screen_h;
+    int density;            /* ‰，1000 = 1.0x */
+    int fp;                 /* 字号像素 */
+    int wc;                 /* 半角列宽（全角 = 2 × wc） */
+    int rh;                 /* 基础行高 */
+    int m_top, m_bot, m_left, m_right;  /* 自动补齐后的边距（只增不减） */
+    int cols;               /* C */
+    int rows;               /* V */
+    RfRect top_bar;         /* 1 个基础行高 */
+    RfRect body;            /* C 列 × V 行 */
+    RfRect btn_bar;         /* 底栏上行（可选按钮行） */
+    RfRect pager_bar;       /* 底栏下行（翻页行） */
+    int overflow;           /* 屏幕过小、内容放不下时为 1 */
+} RfGrid;
+
+void rf_grid_build(RfGrid *g, const RfSettings *s,
+                   int screen_w, int screen_h, int density);
+
+/* ---------------- UTF-8 与字符宽度（§5.1） ---------------- */
+#define RF_REPLACEMENT 0xFFFDu
+
+/* 解码一个码点；返回消耗字节数。非法序列返回 1 且 *cp = RF_REPLACEMENT。 */
+int rf_utf8_decode(const u8 *p, const u8 *end, u32 *cp);
+/* 列宽：全角 = 2，半角 = 1（不存在 0 宽） */
+int rf_char_cols(u32 cp);
+
+/* ---------------- 文档与源行（§5.1、§1.3） ---------------- */
+typedef struct {
+    const u8 *data;
+    u64 len;
+    u64 line_count;   /* L，源行数（空文件为 0） */
+} RfDoc;
+
+void rf_doc_init(RfDoc *d, const u8 *data, u64 len, u64 line_count);
+u64  rf_count_lines(const u8 *data, u64 len);      /* 统计 L */
+u64  rf_line_end(const RfDoc *d, u64 off);         /* 行内容末尾（不含 \n） */
+u64  rf_next_line_start(const RfDoc *d, u64 off);  /* 下一行起点（跳过 \n） */
+u64  rf_line_start_of(const RfDoc *d, u64 off);    /* off 所在行的起点 */
+u64  rf_prev_line_start(const RfDoc *d, u64 off);  /* 上一行起点（off 须为行首） */
+u64  rf_line_index_of(const RfDoc *d, u64 off);    /* off 所在行号（1-based，空文件为 0） */
+
+/* ---------------- 排版（§5.2–§5.5、§8） ---------------- */
+#define RF_TERM_FILLED 0x01
+#define RF_TERM_FORCED 0x02
+#define RF_TERM_EOF    0x04
+
+#define RF_ROW_TEXT   0
+#define RF_ROW_TITLE1 1   /* "# "    占 2 渲染行，2.0× */
+#define RF_ROW_TITLE2 2   /* "## "   占 2 渲染行，1.5× */
+#define RF_ROW_TITLE3 3   /* "### "  占 1 渲染行，1.0× */
+#define RF_ROW_BLANK  4   /* 空白补齐 / 换页符填充 */
+
+typedef struct {
+    u64 start_off, end_off;  /* 本渲染行对应的源字节区间 */
+    u64 line;                /* 该行所属源行号（1-based） */
+    u16 cols_used;
+    u8  kind;
+    u8  truncated;           /* 截断模式下该行被截断（行尾有 …） */
+    u8  block_start;         /* 1 = 本行是一个块（正文行 / 标题块首行）的起点 */
+    u8  pad[3];
+} RfRow;
+
+typedef struct {
+    u64 anchor_line, anchor_off;   /* 页首锚点（进度保存的就是这两个值） */
+    u64 next_line,  next_off;      /* 下一页起点（= 本页已渲染字节的末尾） */
+    int row_count;                 /* 恒 = V */
+    int rows_filled;               /* 其中有内容的行数 */
+    u8  term;                      /* RF_TERM_* 位标志 */
+} RfPage;
+
+typedef struct {
+    int truncate_scroll;   /* 1 = 截断 + 行尾 … + 点击滚动（仅生成式书，v3.4.1） */
+} RfMode;
+
+/* --- 渲染行迭代器（逐渲染行前进，供翻页与回溯共用） --- */
+typedef struct {
+    const RfDoc *d;
+    const RfGrid *g;
+    const RfMode *m;
+    u64 pos;          /* 当前字节位置 */
+    u64 line;         /* pos 所在源行号（1-based） */
+    u64 line_end;
+    int line_has_nl;
+    int state;        /* 0 = 待载入源行；1 = 行内续排 */
+    int kind;         /* 当前块的行类型 */
+    int cap;          /* 当前块的列容量 */
+    int block_rows;   /* 当前块占用的渲染行数（标题 > 1，正文 = 0） */
+    int block_left;   /* 当前块剩余渲染行数 */
+} RfIter;
+
+void rf_iter_init(RfIter *it, const RfDoc *d, const RfGrid *g, const RfMode *m,
+                  u64 off, u64 line);
+/* 载入当前块（如需要）；返回该块占用的渲染行数（正文为 0）。
+ * 若遇到换页符或文件末尾而无法产出，返回 -1 并置 *term。 */
+int rf_iter_block(RfIter *it, u8 *term);
+/* 产出下一个渲染行；返回 1 成功、0 结束（*term 说明原因）。 */
+int rf_iter_next(RfIter *it, RfRow *row, u8 *term);
+
+/* 从 anchor 起排版一页。rows 需能容纳 g->rows 个元素；返回有内容的行数。 */
+int rf_page_layout(const RfDoc *d, const RfGrid *g, const RfMode *m,
+                   u64 anchor_off, u64 anchor_line, RfPage *pg, RfRow *rows);
+
+/* 上一页（§8.3）：B = max(1, cur_line − (V + 2))，累积渲染行后取
+ * "结束于当前锚点之前的最后 V 行"。返回 0 成功；1 = 已在第一页。 */
+int rf_page_prev(const RfDoc *d, const RfGrid *g, const RfMode *m,
+                 u64 cur_anchor_off, u64 cur_anchor_line,
+                 RfPage *pg, RfRow *rows);
+
+/* 翻页键状态（§8.1，v3.4 修正 A2） */
+static inline int rf_can_prev(const RfPage *pg) { return pg->anchor_off > 0; }
+static inline int rf_can_next(const RfPage *pg) { return (pg->term & RF_TERM_EOF) == 0; }
+
+/* ---------------- 校验与渲染（验证用） ---------------- */
+u32 rf_crc32(const u8 *p, size_t n);
+u64 rf_fnv1a(const void *p, size_t n);
+u64 rf_fnv1a_u64(u64 h, u64 v);
+
+/* 验证用渲染：把每个字符画成其网格单元内的方块（不含真实字形），
+ * 用于验证网格几何与渲染确定性。返回整帧的 FNV-1a。 */
+u64 rf_render_page(u16 *fb, int fw, int fh, const RfGrid *g,
+                   const RfRow *rows, int nrows, const RfDoc *d);
+
+/* 页哈希（确定性比对用） */
+u64 rf_hash_page(const RfPage *pg, const RfRow *rows);
+
+/* ---------------- 进度文件（§9.3 RFBOOK/RFPROG 格式，验证用） ---------------- */
+/* 编码为文本行格式，返回写入的字节数；buf 需 ≥ 128 字节。 */
+int rf_progress_encode(char *buf, size_t cap,
+                       u64 source_line, u64 line_offset, u64 total_lines, u64 ts);
+/* 解析并校验 CRC32；返回 0 成功。 */
+int rf_progress_decode(const char *buf, size_t len,
+                       u64 *source_line, u64 *line_offset, u64 *total_lines);
+
+/* ---------------- 自检 ---------------- */
+/* 测试辅助：生成与自检完全一致的确定性语料（供 tools/debug_prev.c 复现） */
+u64 rf_test_gen_main(u8 *buf, u64 cap);
+
+/* 运行 §16 最小验证 + 不重不漏；返回 0 全部通过。out 写入报告文本。 */
+int rf_selftest(char *out, size_t outsz);
+
+#endif /* RF_H */
