@@ -42,6 +42,7 @@ public class MainActivity extends Activity {
     private static final HashMap<Integer, Bitmap> CACHE = new HashMap<Integer, Bitmap>();
     private static byte[] alpha = new byte[MAX_GLYPH * MAX_GLYPH];
 
+    private static MainActivity inst;
     private RailView view;
     private Bitmap bitmap;
     private int[] pixels;
@@ -133,6 +134,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle saved) {
         super.onCreate(saved);
+        inst = this;
         density = (int) (getResources().getDisplayMetrics().density * 1000);
         String dataDir = getFilesDir().getAbsolutePath();
         String importDir = getExternalFilesDir(null) != null
@@ -143,6 +145,18 @@ public class MainActivity extends Activity {
         view.setBackgroundColor(0xFF000000);
         setContentView(view);
         Log.i("READFLASH", "init dataDir=" + dataDir + " importDir=" + importDir + " density=" + density);
+    }
+
+    /** 由 native 调用：根页面确认退出后结束应用 */
+    @SuppressWarnings("unused")
+    static void finishApp() {
+        final MainActivity a = inst;
+        if (a == null) return;
+        a.runOnUiThread(new Runnable() {
+            public void run() {
+                a.finishAffinity();
+            }
+        });
     }
 
     @Override

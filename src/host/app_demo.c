@@ -130,6 +130,19 @@ int main(void)
     tap_center(a, 1, 1);                       /* 顶栏 <：在书库无动作 */
     step(a, "书库", "/tmp/01-library.ppm");
 
+    /* 1.5) 根页面（书库）返回 → 退出确认框 → 取消 */
+    {
+        int b1, b2;
+        tap_back(a);
+        rf_app_render(a, fb, W, H);
+        b1 = rf_app_book_id(a);
+        dump("/tmp/15-exit-confirm.ppm");
+        tap_bar(a, 1);                      /* [取消] */
+        b2 = rf_app_book_id(a);
+        printf("  根页面返回: 确认框=%d（期望 5） 取消后=%d（期望 0）\n", b1, b2);
+        printf("  判定: 退出确认=%d\n", (b1 == 5 && b2 == 0));
+    }
+
     /* 2) 选中第 0 行 → 按 [打开] → 教程书 → 翻两页 */
     tap_body_row(a, 0);
     tap_bar(a, 0);
@@ -151,7 +164,15 @@ int main(void)
     tap_back(a);                               /* 返回书库（不保存） */
 
     /* 5) 导入 sample.txt 并阅读 */
-    tap_bar(a, 2);                             /* [导入] */
+    tap_bar(a, 2);                             /* [导入] → 弹提示框（含导入目录） */
+    {
+        int bi = rf_app_book_id(a);
+        rf_app_render(a, fb, W, H);
+        dump("/tmp/16-import-info.ppm");
+        tap_bar(a, 0);                         /* [确定] 关闭提示框 */
+        printf("  导入后提示框=%d（期望 5） 关闭后=%d（期望 0）\n", bi, rf_app_book_id(a));
+        printf("  判定: 导入提示框=%d\n", (bi == 5 && rf_app_book_id(a) == 0));
+    }
     step(a, "书库(导入后)", "/tmp/08-library-imported.ppm");
 
     tap_body_row(a, 2);                        /* 第 2 项 = 导入的书（行 2*1=2） */

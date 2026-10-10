@@ -2,6 +2,7 @@
 #include "rf.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include <time.h>
 
 static char g_data[512];
@@ -26,4 +27,14 @@ u64 pal_ticks_ms(void)
 u64 pal_now_unix(void)
 {
     return (u64)time(NULL);
+}
+
+static void (*g_exit_hook)(void);
+
+void pal_set_exit_hook(void (*fn)(void)) { g_exit_hook = fn; }
+
+void pal_app_exit(void)
+{
+    if (g_exit_hook) g_exit_hook();      /* 平台接管（安卓：结束 Activity） */
+    else exit(0);                        /* 宿主/iOS 兜底 */
 }

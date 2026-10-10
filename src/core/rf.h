@@ -199,6 +199,9 @@ const char *pal_app_data_dir(void);
 const char *pal_import_dir(void);
 u64 pal_ticks_ms(void);
 u64 pal_now_unix(void);
+/* 退出应用：平台层实现（安卓 finishAffinity、iOS 退出主循环）；宿主直接 exit(0) */
+void pal_app_exit(void);
+void pal_set_exit_hook(void (*fn)(void));
 
 /* ---------------- 字形提供者（D8：排版不依赖字体，字形按网格约束绘制） ---------------- */
 /* 取一个码点的 alpha 位图：alpha 缓冲容量 cap 字节，返回写入的宽高。成功返回 1。 */

@@ -45,6 +45,18 @@ static int android_glyph(void *ud, u32 cp, int px, int flags, u8 *alpha, int cap
     return 1;
 }
 
+/* 退出应用：交给 Java 结束 Activity（不使用 exit，避免安卓下进程被硬杀） */
+static void android_exit(void)
+{
+    JNIEnv *env = env_get();
+    if (!env || !g_cls) return;
+    {
+        jmethodID mid = (*env)->GetStaticMethodID(env, g_cls, "finishApp", "()V");
+        if (mid) (*env)->CallStaticVoidMethod(env, g_cls, mid);
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    }
+}
+
 static void fb_alloc(int w, int h)
 {
     if (g_fb) { free(g_fb); g_fb = NULL; }
@@ -78,6 +90,7 @@ Java_com_readflash_app_MainActivity_nativeInit(JNIEnv *env, jclass cls,
     snprintf(p, sizeof p, "%s", g_import_dir);      mkdir(p, 0770);
 
     pal_set_dirs(g_data_dir, g_import_dir);
+    pal_set_exit_hook(android_exit);
     rf_glyph_set_provider(android_glyph, NULL);
 
     rf_store_init(&g_store, g_data_dir);

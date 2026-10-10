@@ -816,7 +816,16 @@ static void do_action(RfApp *a, int act)
     switch (act) {
     case ACT_BACK:
         if (a->book == RF_BOOK_DIALOG) a->dlg_active = 0;
-        stack_pop(a);                        /* 一律出栈一次 */
+        if (a->sp <= 1) {                    /* 根页面（书库）：确认是否退出应用 */
+            snprintf(a->dlg, sizeof a->dlg,
+                     "确定要退出应用吗？\n当前在书库（根页面）。");
+            a->dlg_kind = 2;
+            a->dlg_action = -1;
+            a->dlg_active = 1;
+            stack_push(a, RF_BOOK_DIALOG);
+            return;
+        }
+        stack_pop(a);                        /* 其余情况一律出栈一次 */
         return;
     case ACT_OPEN:
         if (a->sel == 0) stack_push(a, RF_BOOK_TUTORIAL);
@@ -850,6 +859,12 @@ static void do_action(RfApp *a, int act)
         }
         return;
     case ACT_DLG_OK:
+        if (a->dlg_kind == 2) {              /* 退出确认 */
+            a->dlg_active = 0;
+            a->dlg_kind = 0;
+            pal_app_exit();
+            return;
+        }
         if (a->dlg_kind == 1 && a->dlg_action >= 0 && a->dlg_action < a->nbooks) {
             rf_book_delete(a->st, a->books[a->dlg_action].id);
             snprintf(a->st->status, sizeof a->st->status, "已删除");
@@ -882,6 +897,17 @@ static void do_action(RfApp *a, int act)
         snprintf(a->st->status, sizeof a->st->status, n > 0 ? "已导入 %d 本" : "导入目录里没有 .txt", n);
         gen_library(a);
         a->laid = 0;                                 /* 内容变了：作废排版 */
+        {   /* 通用导入：不依赖平台文件选择器，只扫固定目录 */
+            const char *dir = pal_import_dir();
+            snprintf(a->dlg, sizeof a->dlg,
+                     n > 0 ? "已导入 %d 本。\n导入目录：\n%s"
+                           : "导入目录里没有 .txt。\n把 txt 放进下面目录后\n再点 [导入]：\n%s",
+                     n, dir ? dir : "(未设置)");
+            a->dlg_kind = 0;
+            a->dlg_action = -1;
+            a->dlg_active = 1;
+            stack_push(a, RF_BOOK_DIALOG);
+        }
         return;
     }
     case ACT_FONT_DN: if (s->font_dp > RF_FONT_DP_MIN) s->font_dp--; goto regrid;
