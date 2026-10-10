@@ -457,6 +457,35 @@ int rf_selftest(char *out, size_t outsz)
     rp(&r, "      连续 \\n: %llu 行 → %d 页连续覆盖, 失败 %d\n",
        (unsigned long long)rf_count_lines(g_doc, len_nl), pages, r.fails - bad0);
 
+    /* 标题块占用行数：# → 2 行、## → 2 行、### → 1 行（且不超行） */
+    {
+        RfSettings st2;
+        RfGrid g2;
+        RfMode m2;
+        RfDoc d2;
+        RfPage pg2;
+        RfRow rr[RF_MAX_ROWS];
+        static const char *DOC = "# A\n## B\n### C\ntail\n";
+        int want[6] = { RF_ROW_TITLE1, RF_ROW_BLANK, RF_ROW_TITLE2, RF_ROW_BLANK, RF_ROW_TITLE3, RF_ROW_TEXT };
+        int i2, bad0 = r.fails;
+        rf_settings_default(&st2);
+        m2.truncate_scroll = 0;
+        rf_grid_build(&g2, &st2, 720, 1280, 2000);
+        memcpy(g_doc, DOC, strlen(DOC));
+        rf_doc_init(&d2, g_doc, strlen(DOC), rf_count_lines(g_doc, strlen(DOC)));
+        rf_page_layout(&d2, &g2, &m2, 0, 1, &pg2, rr);
+        if (rr[0].kind != RF_ROW_TITLE1) fail(&r, "标题块: 第 0 行不是 # 标题");
+        for (i2 = 0; i2 < 6; i2++)
+            if (rr[i2].kind != want[i2])
+                fail(&r, "标题块占用行数错: row %d kind=%d 期望 %d", i2, rr[i2].kind, want[i2]);
+        /* 2×/1.5× 字形必须落在块内：块高 = 2 行 ≥ 字形高 */
+        if (g2.fp * 2 > 2 * g2.rh) fail(&r, "标题: 2× 字形高于 行容器+自动空行");
+        if (g2.fp * 3 / 2 > 2 * g2.rh) fail(&r, "标题: 1.5× 字形高于 行容器+自动空行");
+        if (g2.fp > g2.rh) fail(&r, "标题: 1× 字形高于 1 个行容器");
+        rp(&r, "标题占行: # 1 行+自动空行, ## 1 行+自动空行, ### 1 行（无空行）, 失败 %d\n",
+           r.fails - bad0);
+    }
+
     rp(&r, "边界: \n");
     check_bounds(&r, "空文件", "");
     check_bounds(&r, "单换行", "\n");

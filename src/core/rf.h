@@ -135,6 +135,7 @@ typedef struct {
     u64 line_end;
     int line_has_nl;
     int state;        /* 0 = 待载入源行；1 = 行内续排 */
+    int pad;          /* 1 = 待输出一个"标题后自动空行"（不消耗源字节） */
     int kind;         /* 当前块的行类型 */
     int cap;          /* 当前块的列容量 */
     int block_rows;   /* 当前块占用的渲染行数（标题 > 1，正文 = 0） */

@@ -258,6 +258,26 @@ int main(void)
         tap_back(a);
     }
 
+    /* 6.9) 保存 → 提示框 → 确定回设置；并导出带标题的预览画面以便肉眼检查 */
+    {
+        int b1, b2;
+        tap_back(a);                        /* 回书库 */
+        tap_bar(a, 3);                      /* [设置] */
+        tap_body_btn(a, 1);                 /* 字号 +1（编辑值） */
+        tap_bar(a, 1);                      /* [保存] → 应弹出提示框 */
+        rf_app_render(a, fb, W, H);
+        b1 = rf_app_book_id(a);
+        dump("/tmp/13-save-dialog.ppm");
+        tap_bar(a, 0);                      /* [确定] */
+        b2 = rf_app_book_id(a);
+        printf("  保存后书=%d（期望 5=提示框） 确定后书=%d（期望 2=设置）\n", b1, b2);
+        printf("  判定: 保存提示框=%d\n", (b1 == 5 && b2 == 2));
+        tap_bar(a, 0);                      /* [预览]：导出带标题的样例 */
+        rf_app_render(a, fb, W, H);
+        dump("/tmp/14-titles.ppm");
+        tap_back(a);
+    }
+
     /* 7) 退出并确认进度落盘 */
     rf_app_destroy(a);
     snprintf(cmd, sizeof cmd,

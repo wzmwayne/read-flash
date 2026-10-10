@@ -62,7 +62,7 @@ struct RfApp {
     int debug_view;
 
     char dlg[192];
-    int dlg_active, dlg_action;
+    int dlg_active, dlg_action, dlg_kind;   /* dlg_kind: 0=信息提示, 1=删除确认 */
 
     char bar[192];
     struct { int row, c0, c1, act; } hb[HIT_BODY_MAX];
@@ -219,7 +219,7 @@ static void gen_settings(RfApp *a)
         gputs(a, "# 一级标题\n## 二级标题\n### 三级标题\n\n");
         gputs(a, "这是一条很长的行，用来观察换行渲染在视口宽度处切断的效果，"
                  "既不能多一个字，也不能少一个字。\n\n");
-        gputs(a, "当前字号 / 行距 / 边距已应用到本页。\n");
+        gputs(a, "当前字号 / 行高 / 边距已应用到本页。\n");
     } else {
         gputs(a, "字号\n");
         gbtn(a, ACT_FONT_DN, "-");
@@ -690,15 +690,17 @@ int rf_app_render(RfApp *a, u16 *fb, int fw, int fh)
             } else if (r->kind == RF_ROW_TITLE3) {   /* ###：1× 字号，占 1 行，只加粗 */
                 base = C_TITLE; bold = 1;
             }
-            if (r->kind == RF_ROW_TITLE1 || r->kind == RF_ROW_TITLE2) {
-                boxy = y;                        /* 标题块贴顶，占两个行距槽位 */
-                boxh = 2 * a->g.rh;
-            } else {
-                rf_app_row_box(a, i, &boxy, &boxh);   /* 与点击共用同一公式 */
+            rf_app_row_box(a, i, &boxy, &boxh);       /* 行容器：标题与正文一致，与点击共用公式 */
+            {
+                u64 p0 = r->start_off, p1 = r->end_off;
+                if (r->kind == RF_ROW_TITLE1 || r->kind == RF_ROW_TITLE2 || r->kind == RF_ROW_TITLE3) {
+                    while (p0 < p1 && a->data[p0] == '#') p0++;      /* 标题标记不渲染 */
+                    if (p0 < p1 && a->data[p0] == ' ') p0++;
+                }
+                draw_text(a, fb, fw, fh, a->data + p0, p1 - p0,
+                          a->g.body.x, boxy, px, num, den, base, a->g.cols,
+                          a->book == RF_BOOK_LIBRARY ? 1 : 0, boxh, bold, top_align);
             }
-            draw_text(a, fb, fw, fh, a->data + r->start_off, r->end_off - r->start_off,
-                      a->g.body.x, boxy, px, num, den, base, a->g.cols,
-                      a->book == RF_BOOK_LIBRARY ? 1 : 0, boxh, bold, top_align);
         }
     }
 
@@ -749,6 +751,7 @@ static void do_action(RfApp *a, int act)
         if (a->sel >= 1 && a->sel - 1 < a->nbooks) {
             snprintf(a->dlg, sizeof a->dlg, "删除《%s》？\n此操作不可撤销。", a->books[a->sel - 1].title);
             a->dlg_action = a->sel - 1;
+            a->dlg_kind = 1;
             a->dlg_active = 1;
             stack_push(a, RF_BOOK_DIALOG);
         } else {
@@ -756,15 +759,17 @@ static void do_action(RfApp *a, int act)
         }
         return;
     case ACT_DLG_OK:
-        if (a->dlg_action >= 0 && a->dlg_action < a->nbooks) {
+        if (a->dlg_kind == 1 && a->dlg_action >= 0 && a->dlg_action < a->nbooks) {
             rf_book_delete(a->st, a->books[a->dlg_action].id);
             snprintf(a->st->status, sizeof a->st->status, "已删除");
         }
         a->dlg_active = 0;
+        a->dlg_kind = 0;
         stack_pop(a);                        /* 提示框是栈顶：出栈即回到来源书 */
         return;
     case ACT_DLG_CANCEL:
         a->dlg_active = 0;
+        a->dlg_kind = 0;
         stack_pop(a);
         return;
     case ACT_IMPORT: {
@@ -830,10 +835,33 @@ regrid:
         gen_settings(a);
         set_bar(a);
         return;
-    case ACT_SAVE:
-        rf_settings_save(a->st, &a->editing);        /* 写盘；当前会话仍用旧值 */
-        snprintf(a->st->status, sizeof a->st->status, "已保存，重启后生效");
+    case ACT_SAVE: {
+        RfSettings back;
+        int rc = rf_settings_save(a->st, &a->editing);      /* 写全局配置文件 */
+        int ok = 0;
+        if (rc == 0) {                                       /* 回读校验：确认真的写进去了 */
+            back = a->st->settings;
+            a->st->settings = a->editing;                    /* 借用 load 解析配置 */
+            if (rf_settings_load(a->st) == 0 &&
+                a->st->settings.font_dp == a->editing.font_dp &&
+                a->st->settings.lh_auto == a->editing.lh_auto &&
+                a->st->settings.lh_tenths == a->editing.lh_tenths &&
+                a->st->settings.lh_dp == a->editing.lh_dp &&
+                a->st->settings.m_top_dp == a->editing.m_top_dp &&
+                a->st->settings.live_edit == a->editing.live_edit)
+                ok = 1;
+            a->st->settings = back;                          /* 当前会话仍用生效值 */
+        }
+        snprintf(a->dlg, sizeof a->dlg,
+                 ok ? "已保存到全局配置文件。\n重启后全应用生效。"
+                    : "保存失败：配置文件写入或校验不通过。\n请检查应用数据目录权限。");
+        a->dlg_kind = 0;
+        a->dlg_action = -1;
+        a->dlg_active = 1;
+        stack_push(a, RF_BOOK_DIALOG);
+        snprintf(a->st->status, sizeof a->st->status, ok ? "已保存" : "保存失败");
         return;
+    }
     case ACT_DEBUG:   stack_push(a, RF_BOOK_DEBUG); return;
     case ACT_REBUILD:
         if (a->book == RF_BOOK_DEBUG) snprintf(a->st->status, sizeof a->st->status, "索引已重建");

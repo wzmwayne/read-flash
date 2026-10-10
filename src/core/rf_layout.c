@@ -97,13 +97,13 @@ void rf_iter_init(RfIter *it, const RfDoc *d, const RfGrid *g, const RfMode *m,
     it->pos = off; it->line = line;
     it->line_end = off; it->line_has_nl = 0;
     it->state = 0; it->kind = RF_ROW_TEXT; it->cap = g->cols;
-    it->block_rows = 0; it->block_left = 0;
+    it->block_rows = 0; it->block_left = 0; it->pad = 0;
 }
 
 /* 载入当前块；返回块占用行数（正文 0）。无法产出时返回 -1 并置 *term。 */
 int rf_iter_block(RfIter *it, u8 *term)
 {
-    if (it->state == 1) return it->block_rows;
+    if (it->state == 1 || it->state == 2) return it->block_rows;   /* 2 = 块内补空行 */
     for (;;) {
         u64 le, llen;
         int kind, num, den, span;
@@ -121,8 +121,8 @@ int rf_iter_block(RfIter *it, u8 *term)
         }
         span = detect_title(it->d->data + it->pos, llen, &kind, &num, &den);
         it->kind = kind;
-        it->block_rows = span;
-        it->block_left = span;
+        it->block_rows = 0;
+        it->block_left = 0;
         if (span == 0) {
             it->cap = it->g->cols;
         } else {
@@ -139,6 +139,16 @@ int rf_iter_next(RfIter *it, RfRow *row, u8 *term)
     u64 row_start, p;
     int used = 0, truncated = 0, limit, block_start;
 
+    if (it->pad) {                              /* 标题后自动插入的空渲染行（不消耗源字节） */
+        it->pad = 0;
+        row->start_off = row->end_off = it->pos;
+        row->line = it->line;
+        row->cols_used = 0;
+        row->kind = RF_ROW_BLANK;
+        row->truncated = 0;
+        row->block_start = 1;
+        return 1;
+    }
     if (rf_iter_block(it, term) < 0) return 0;
 
     row_start = p = it->pos;
@@ -172,16 +182,17 @@ int rf_iter_next(RfIter *it, RfRow *row, u8 *term)
     row->cols_used = (u16)used;
     row->kind = (u8)it->kind;
     row->truncated = (u8)truncated;
-    row->block_start = (u8)block_start;
+    row->block_start = 1;
+    (void)block_start;
 
-    it->pos = p;
-    if (it->block_left > 0) {
-        it->block_left--;
-        if (it->block_left == 0 && it->kind != RF_ROW_TEXT) {
-            it->kind = RF_ROW_TEXT;             /* 标题块排完，剩余内容按正文续排 */
-            it->cap = it->g->cols;
-        }
+    /* 标题只占一个渲染行：排出本行后，剩余内容按正文续排 */
+    if (it->kind != RF_ROW_TEXT) {
+        if (it->kind == RF_ROW_TITLE1 || it->kind == RF_ROW_TITLE2)
+            it->pad = 1;                        /* # / ## 之后自动加一个空行 */
+        it->kind = RF_ROW_TEXT;
+        it->cap = it->g->cols;
     }
+    it->pos = p;
     if (it->pos >= it->line_end || truncated) { /* 本源行结束 */
         it->pos = it->line_end + (it->line_has_nl ? 1u : 0u);
         it->line++;
@@ -218,6 +229,17 @@ int rf_page_layout(const RfDoc *d, const RfGrid *g, const RfMode *m,
         }
         if (!rf_iter_next(&it, &rows[r], &term)) break;
         r++;
+    }
+    if (r == V && r > 1 &&
+        (rows[r - 1].kind == RF_ROW_TITLE1 || rows[r - 1].kind == RF_ROW_TITLE2)) {
+        /* 标题行与其自动空行成对，不拆到两页：把标题留给下一页 */
+        r--;
+        it.pos = rows[r].start_off;
+        it.line = rows[r].line;
+        it.state = 0;
+        it.pad = 0;
+        rows[r].kind = RF_ROW_BLANK;
+        rows[r].start_off = rows[r].end_off = it.pos;
     }
     if (it.pos >= d->len) term |= RF_TERM_EOF;
     if (r == V)           term |= RF_TERM_FILLED;
