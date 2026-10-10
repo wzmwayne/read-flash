@@ -15,7 +15,8 @@
 #define C_TITLE  0x07FF
 #define C_BTN    0x07E0
 #define C_DIS    0x4208
-#define C_DIM    0x632C
+#define C_DIM    0x632C          /* #666666 次要信息 */
+#define C_WHITE  0xFFFF          /* #FFFFFF 可用翻页键 */
 #define C_ACC    0xFFE0
 #define C_DANGER 0xF9C8
 #define C_SEP    0x2945
@@ -714,8 +715,8 @@ int rf_app_render(RfApp *a, u16 *fb, int fw, int fh)
     /* 底栏下行：翻页行（左 <，右 >） */
     fill(fb, fw, fh, a->g.pager_bar.x, a->g.pager_bar.y, a->g.pager_bar.w, 1, C_SEP);
     {
-        u16 cprev = (a->laid && rf_can_prev(&a->page)) ? C_DIM : C_DIS;
-        u16 cnext = (a->laid && rf_can_next(&a->page)) ? C_DIM : C_DIS;
+        u16 cprev = (a->laid && rf_can_prev(&a->page)) ? C_WHITE : C_DIS;   /* 可用=纯白 */
+        u16 cnext = (a->laid && rf_can_next(&a->page)) ? C_WHITE : C_DIS;   /* 不可用=深灰 */
         const u8 *lt = (const u8 *)"<";
         const u8 *gt = (const u8 *)">";
         {
