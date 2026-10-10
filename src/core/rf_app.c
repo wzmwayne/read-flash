@@ -515,7 +515,6 @@ static void load_toc(RfApp *a, const char *id)
         }
     }
     fclose(f);
-    fprintf(stderr, "[toc] %s → %d 条\n", path, a->toc_n);
     /* 访问位 */
     memset(a->toc_seen, 0, sizeof a->toc_seen);
     book_path_join(path, sizeof path, a->st->root, id, ".read");
@@ -675,6 +674,16 @@ static void load_reader(RfApp *a, const char *id)
     long n;
     u8 *b;
     u64 len = 0;
+    char rid[16];
+
+    if (!id || !*id) {                      /* 自愈：id 丢失时取书库里的第一本 */
+        static RfBookEnt tmp[RF_MAX_BOOKS];
+        int nb = rf_books_scan(a->st, tmp, RF_MAX_BOOKS);
+        if (nb > 0) {
+            snprintf(rid, sizeof rid, "%s", tmp[0].id);
+            id = rid;
+        }
+    }
 
     snprintf(p, sizeof p, "%s/book/%s/book", a->st->root, id);
     f = fopen(p, "rb");
@@ -693,7 +702,7 @@ static void load_reader(RfApp *a, const char *id)
     free((void *)a->data == (void *)a->gen ? NULL : (void *)a->data);
     a->data = b;
     a->data_len = len;
-    snprintf(a->id, sizeof a->id, "%s", id);
+    if (id != a->id) snprintf(a->id, sizeof a->id, "%s", id);   /* 防自赋值：同一块内存会被清空 */
     a->line = 1;
     a->off = 0;
     if (rf_index_load(a->st, id, b, len, &a->ix, a->storage) != 0)
@@ -705,7 +714,7 @@ static void load_reader(RfApp *a, const char *id)
             a->off = po <= len ? po : 0;
         }
     }
-    load_toc(a, id);
+    load_toc(a, a->id);          /* 用 a->id：调用方传入的 id 可能已失效/为空 */
     /* 标题 */
     {
         RfBookEnt e;
@@ -743,7 +752,12 @@ static void open_book(RfApp *a, int book)
     a->laid = 0;
 
     switch (book) {
-    case RF_BOOK_READER:  load_reader(a, a->id); break;   /* a->id 由调用方（[打开]）设置 */
+    case RF_BOOK_READER: {
+        char rid[16];                        /* 必须传副本：不能把 a->id 自己传进去（自赋值会清空） */
+        snprintf(rid, sizeof rid, "%s", a->id);
+        load_reader(a, rid);
+        break;
+    }
     case RF_BOOK_TUTORIAL: gen_tutorial(a); snprintf(a->title, sizeof a->title, "阅读器-应用使用教程"); break;
     case RF_BOOK_SETTINGS:
         if (a->preview) { a->g = a->g_saved; a->preview = 0; }   /* 离开预览：恢复生效网格 */
