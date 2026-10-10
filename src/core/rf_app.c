@@ -430,7 +430,9 @@ static void update_system_comps(RfApp *a)
     int cols = a->g.cols;
     int cp = a->laid && rf_can_prev(&a->page);
     int cn = a->laid && rf_can_next(&a->page);
-    comp_reg(a, "nav_back",   RF_BAND_TOP,   0, 0, 2, ACT_BACK, RF_C_BTN, 0, 1, C_TITLE, C_TITLE);
+    /* 返回热区覆盖整个顶栏：`<` 与标题文字都触发返回（§11.3） */
+    comp_reg(a, "nav_back",   RF_BAND_TOP,   0, 0, cols > 0 ? cols : 1,
+             ACT_BACK, RF_C_BTN, 0, 1, C_TITLE, C_TITLE);
     comp_reg(a, "page_prev",  RF_BAND_PAGER, 0, 0, 2, ACT_PAGE_PREV, RF_C_BTN, 0, cp,
              cp ? C_WHITE : C_DIS, cp ? C_WHITE : C_DIS);
     comp_reg(a, "page_next",  RF_BAND_PAGER, 0, cols > 2 ? cols - 2 : 0, cols,

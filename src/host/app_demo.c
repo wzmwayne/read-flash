@@ -130,6 +130,20 @@ int main(void)
     tap_center(a, 1, 1);                       /* 顶栏 <：在书库无动作 */
     step(a, "书库", "/tmp/01-library.ppm");
 
+    /* 1.4) 顶栏热区：点标题文字（非 < 号）也应触发返回 */
+    {
+        int sw, sh, wc, rh, cols, rows, bx, by, bary;
+        int b1, b2;
+        rf_app_metrics(a, &sw, &sh, &wc, &rh, &cols, &rows, &bx, &by, &bary);
+        tap_body_row(a, 0);                 /* 选中教程 */
+        tap_bar(a, 0);                      /* [打开] → 教程书 */
+        b1 = rf_app_book_id(a);
+        rf_app_tap(a, bx + wc * 8, by - rh / 2);   /* 顶栏中部（标题文字上） */
+        b2 = rf_app_book_id(a);
+        printf("  顶栏点标题: 打开后=%d 点标题后=%d\n", b1, b2);
+        printf("  判定: 标题也算返回=%d\n", (b1 == 4 && b2 == 0));
+    }
+
     /* 1.5) 根页面（书库）返回 → 退出确认框 → 取消 */
     {
         int b1, b2;
@@ -174,10 +188,11 @@ int main(void)
             int has_null = (strstr(txt, "(null)") != NULL);
             int has_path = (strstr(txt, "/import") != NULL || strstr(txt, "import") != NULL);
             printf("  提示框文本: %s\n", has_null ? "含 (null) ✗" : "路径正常 ✓");
-            printf("  判定: 导入提示框=%d 目录路径非空=%d\n",
-                   (bi == 5 && rf_app_book_id(a) == 0), has_path && !has_null);
+            printf("  提示框=%d 目录路径非空=%d\n", bi == 5, has_path && !has_null);
         }
         tap_bar(a, 0);                         /* [确定] 关闭提示框 */
+        printf("  判定: 导入提示框=%d 关闭后回书库=%d\n",
+               (bi == 5), rf_app_book_id(a) == 0);
     }
     step(a, "书库(导入后)", "/tmp/08-library-imported.ppm");
 
