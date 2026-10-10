@@ -28,13 +28,14 @@ static JNIEnv *env_get(void)
 }
 
 /* ---- 字形提供者：调用 Java 静态方法 glyph(int,int,byte[]) ---- */
-static int android_glyph(void *ud, u32 cp, int px, u8 *alpha, int cap, int *gw, int *gh)
+static int android_glyph(void *ud, u32 cp, int px, int flags, u8 *alpha, int cap, int *gw, int *gh)
 {
     JNIEnv *env = env_get();
     jint r;
     (void)ud;
     if (!env || !g_cls || !g_mid_glyph || !g_alpha) return 0;
-    r = (*env)->CallStaticIntMethod(env, g_cls, g_mid_glyph, (jint)cp, (jint)px, g_alpha);
+    /* flags 交给 Java：位0 = 加粗（标题三档） */
+    r = (*env)->CallStaticIntMethod(env, g_cls, g_mid_glyph, (jint)cp, (jint)px, (jint)flags, g_alpha);
     if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); return 0; }
     if (r == 0) return 0;
     *gw = (r >> 16) & 0xFFFF;
@@ -61,7 +62,7 @@ Java_com_readflash_app_MainActivity_nativeInit(JNIEnv *env, jclass cls,
 
     (*env)->GetJavaVM(env, &g_vm);
     g_cls = (jclass)(*env)->NewGlobalRef(env, cls);
-    g_mid_glyph = (*env)->GetStaticMethodID(env, g_cls, "glyph", "(II[B)I");
+    g_mid_glyph = (*env)->GetStaticMethodID(env, g_cls, "glyph", "(III[B)I");
     g_alpha = (jbyteArray)(*env)->NewGlobalRef(env, (*env)->NewByteArray(env, 64 * 64));
 
     d = (*env)->GetStringUTFChars(env, dataDir, NULL);

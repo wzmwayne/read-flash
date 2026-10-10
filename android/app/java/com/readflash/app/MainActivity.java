@@ -49,14 +49,15 @@ public class MainActivity extends Activity {
 
     /** 由 native 调用：取一个码点的 alpha 位图 */
     @SuppressWarnings("unused")
-    private static int glyph(int cp, int px, byte[] out) {
-        int key = (cp << 8) | (px & 0xFF);
+    private static int glyph(int cp, int px, int flags, byte[] out) {
+        int key = (cp << 16) | (px << 4) | (flags & 0xF);
         Bitmap b = CACHE.get(key);
         if (b == null) {
             String s = new String(Character.toChars(cp));
             Paint p = new Paint(PAINT);
             p.setTextSize(px);
             p.setTypeface(Typeface.MONOSPACE);
+            p.setFakeBoldText((flags & 1) != 0);      /* 位0 = 加粗（标题三档） */
             int w = (int) Math.ceil(p.measureText(s)) + 2;
             int h = px + 4;
             if (w < 1) w = 1;
@@ -148,17 +149,5 @@ public class MainActivity extends Activity {
     public void onBackPressed() {
         nativeBack();
         view.redraw();
-    }
-
-    /** native 侧渲染时回调取字形 */
-    @SuppressWarnings("unused")
-    static int glyphProvider(int cp, int px) {
-        int r = glyph(cp, px, alpha);
-        return r;
-    }
-
-    @SuppressWarnings("unused")
-    static byte[] alphaBuffer() {
-        return alpha;
     }
 }
