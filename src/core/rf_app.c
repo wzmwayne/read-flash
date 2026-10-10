@@ -23,8 +23,8 @@
 enum {
     ACT_NONE = 0, ACT_OPEN, ACT_DELETE, ACT_IMPORT,
     ACT_FONT_DN, ACT_FONT_UP, ACT_SP_DN, ACT_SP_UP,
-    ACT_ML_DN, ACT_ML_UP, ACT_MT_DN, ACT_MT_UP,
-    ACT_PREVIEW, ACT_SAVE, ACT_DEBUG, ACT_REBUILD, ACT_RESET,
+    ACT_ML_DN, ACT_ML_UP, ACT_MT_DN, ACT_MT_UP, ACT_LH_DN, ACT_LH_UP,
+    ACT_PREVIEW, ACT_SAVE, ACT_DEBUG, ACT_REBUILD, ACT_RESET, ACT_SETTINGS,
     ACT_DLG_OK, ACT_DLG_CANCEL, ACT_BACK
 };
 
@@ -235,6 +235,14 @@ static void gen_settings(RfApp *a)
         gbtn(a, ACT_SP_UP, "+");
         gputs(a, "      （1.0 - 3.0）\n\n");
 
+        gputs(a, "行高\n");
+        gbtn(a, ACT_LH_DN, "-");
+        gputs(a, " ");
+        gnum(a, (unsigned long long)s->line_height_dp);
+        gputs(a, " ");
+        gbtn(a, ACT_LH_UP, "+");
+        gputs(a, "      （dp，0 = 只用行距）\n\n");
+
         gputs(a, "左右边距\n");
         gbtn(a, ACT_ML_DN, "-");
         gputs(a, " ");
@@ -282,7 +290,9 @@ static void gen_debug(RfApp *a)
     gnum(a, (unsigned long long)a->g.cols);
     gputs(a, " 列 x ");
     gnum(a, (unsigned long long)a->g.rows);
-    gputs(a, " 行\n版本       " RF_VERSION "\n");
+    gputs(a, " 行\n行高下限   ");
+    gnum(a, (unsigned long long)a->st->settings.line_height_dp);
+    gputs(a, " dp\n版本       " RF_VERSION "\n");
     a->data = (const u8 *)a->gen;
     a->data_len = a->gen_len;
 }
@@ -300,12 +310,9 @@ static void gen_library(RfApp *a)
 {
     int i;
     ginit(a);
-    for (i = 0; i < a->nbooks + 3; i++) {
-        const char *t;
-        if (i == 0) t = "应用使用教程";
-        else if (i == 1) t = "设置";
-        else if (i == 2) t = "调试";
-        else t = a->books[i - 3].title;
+    /* 书库单选组只列书：内置《应用使用教程》+ 导入的书；设置/调试在底栏按钮 */
+    for (i = 0; i <= a->nbooks; i++) {
+        const char *t = (i == 0) ? "应用使用教程" : a->books[i - 1].title;
         gputs(a, (i == a->sel) ? "(>)" : "( )");
         gputs(a, t);
         gputs(a, "\n\n");
@@ -325,6 +332,8 @@ static void set_bar(RfApp *a)
         bar_add(a, ACT_OPEN, "打开");
         bar_add(a, ACT_DELETE, "删除");
         bar_add(a, ACT_IMPORT, "导入");
+        bar_add(a, ACT_SETTINGS, "设置");
+        bar_add(a, ACT_DEBUG, "调试");
         break;
     case RF_BOOK_SETTINGS:
         bar_add(a, ACT_PREVIEW, "预览");
@@ -617,17 +626,16 @@ static void do_action(RfApp *a, int act)
         return;
     case ACT_OPEN:
         if (a->sel == 0) open_book(a, RF_BOOK_TUTORIAL);
-        else if (a->sel == 1) open_book(a, RF_BOOK_SETTINGS);
-        else if (a->sel == 2) open_book(a, RF_BOOK_DEBUG);
-        else if (a->sel - 3 < a->nbooks) {
-            snprintf(a->id, sizeof a->id, "%s", a->books[a->sel - 3].id);
+        else if (a->sel - 1 < a->nbooks) {
+            snprintf(a->id, sizeof a->id, "%s", a->books[a->sel - 1].id);
             open_book(a, RF_BOOK_READER);
         }
         return;
+    case ACT_SETTINGS: open_book(a, RF_BOOK_SETTINGS); return;
     case ACT_DELETE:
-        if (a->sel >= 3 && a->sel - 3 < a->nbooks) {
-            snprintf(a->dlg, sizeof a->dlg, "删除《%s》？\n此操作不可撤销。", a->books[a->sel - 3].title);
-            a->dlg_action = a->sel - 3;
+        if (a->sel >= 1 && a->sel - 1 < a->nbooks) {
+            snprintf(a->dlg, sizeof a->dlg, "删除《%s》？\n此操作不可撤销。", a->books[a->sel - 1].title);
+            a->dlg_action = a->sel - 1;
             a->dlg_active = 1;
             open_book(a, RF_BOOK_DIALOG);
         } else {
@@ -670,6 +678,8 @@ static void do_action(RfApp *a, int act)
     case ACT_FONT_UP: if (s->font_dp < RF_FONT_DP_MAX) s->font_dp++; goto regrid;
     case ACT_SP_DN:   if (s->spacing_permille > RF_SPACING_MIN) s->spacing_permille -= 50; goto regrid;
     case ACT_SP_UP:   if (s->spacing_permille < RF_SPACING_MAX) s->spacing_permille += 50; goto regrid;
+    case ACT_LH_DN:   if (s->line_height_dp > 0) s->line_height_dp -= 2; goto regrid;
+    case ACT_LH_UP:   if (s->line_height_dp < RF_LINEHT_DP_MAX) s->line_height_dp += 2; goto regrid;
     case ACT_ML_DN:   if (s->m_left_dp > 0) { s->m_left_dp -= 2; s->m_right_dp = s->m_left_dp; } goto regrid;
     case ACT_ML_UP:   if (s->m_left_dp < RF_MARGIN_DP_MAX) { s->m_left_dp += 2; s->m_right_dp = s->m_left_dp; } goto regrid;
     case ACT_MT_DN:   if (s->m_top_dp > 0) { s->m_top_dp -= 2; s->m_bot_dp = s->m_top_dp; } goto regrid;
@@ -738,7 +748,7 @@ void rf_app_tap(RfApp *a, int x, int y)
             }
         }
         if (a->book == RF_BOOK_LIBRARY) {        /* 单选行 */
-            int n = a->nbooks + 3;
+            int n = a->nbooks + 1;
             int idx = row / 2;
             if (idx >= 0 && idx < n) {
                 a->sel = idx;

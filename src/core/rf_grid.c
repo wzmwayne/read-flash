@@ -5,6 +5,7 @@ void rf_settings_default(RfSettings *s)
 {
     s->font_dp = RF_FONT_DP_DEFAULT;
     s->spacing_permille = RF_SPACING_DEFAULT;
+    s->line_height_dp = RF_LINEHT_DP_DEFAULT;
     s->m_top_dp = s->m_bot_dp = s->m_left_dp = s->m_right_dp = RF_MARGIN_DP_DEFAULT;
 }
 
@@ -35,11 +36,14 @@ void rf_grid_build(RfGrid *g, const RfSettings *s,
     g->wc = (g->fp + 1) / 2;
     if (g->wc < 1) g->wc = 1;
 
-    /* 基础行高 = ceil(fp × 行距‰ / 1000) */
+    /* 基础行高 = max(ceil(fp × 行距‰ / 1000), ceil(行高下限 dp × 密度)) */
     {
         int sp = s->spacing_permille;
+        int lh;
         if (sp < RF_SPACING_MIN) sp = RF_SPACING_MIN;
         g->rh = (g->fp * sp + 999) / 1000;
+        lh = dp2px(s->line_height_dp, density);
+        if (lh > g->rh) g->rh = lh;
         if (g->rh < 1) g->rh = 1;
     }
 

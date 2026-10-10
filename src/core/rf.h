@@ -32,10 +32,13 @@ typedef int64_t  i64;
 #define RF_SPACING_DEFAULT   1200
 #define RF_MARGIN_DP_MAX     64
 #define RF_MARGIN_DP_DEFAULT 8
+#define RF_LINEHT_DP_MAX     64
+#define RF_LINEHT_DP_DEFAULT 0      /* 0 = 只用行距 */
 
 typedef struct {
     int font_dp;            /* 字号，dp，整数 */
-    int spacing_permille;   /* 行距，‰（1200 = 1.2） */
+    int spacing_permille;   /* 行距，‰（1200 = 1.2），决定行高 = 字号 × 行距 */
+    int line_height_dp;     /* 行高下限（dp，0 = 关闭）；实际行高取其与行距结果的较大者 */
     int m_top_dp, m_bot_dp, m_left_dp, m_right_dp;
 } RfSettings;
 

@@ -48,6 +48,14 @@ static void tap_body_row(RfApp *a, int row0)
     rf_app_tap(a, bx + wc * 3, by + row0 * rh + rh / 2);
 }
 
+/* 点顶栏 < 返回：顶栏在边距之内，y = 正文顶部 − 行高/2 */
+static void tap_back(RfApp *a)
+{
+    int wc, rh, bx, by, sw, sh, cols, rows, bary;
+    rf_app_metrics(a, &sw, &sh, &wc, &rh, &cols, &rows, &bx, &by, &bary);
+    rf_app_tap(a, bx + wc, by - rh / 2);
+}
+
 static void tap_bar(RfApp *a, int i)
 {
     int x = 0, wc, rh, bx, by, sw, sh, cols, rows, bary;
@@ -114,24 +122,23 @@ int main(void)
     step(a, "教程 P2", "/tmp/03-tutorial-p2.ppm");
 
     /* 3) 返回书库 */
-    tap_center(a, 8, 8);
+    tap_back(a);
     step(a, "书库(返回)", "/tmp/04-library-back.ppm");
 
-    /* 4) 设置书：选中第 1 行 → [打开] → 调字号 → 预览 */
-    tap_body_row(a, 2);
-    tap_bar(a, 0);
+    /* 4) 设置书：底栏 [设置] 按钮（不再作为单选项） */
+    tap_bar(a, 3);
     step(a, "设置", "/tmp/05-settings.ppm");
     tap_body_btn(a, 1);                        /* 字号 [+] */
     step(a, "设置(字号+1)", "/tmp/06-settings-font.ppm");
     tap_bar(a, 0);                             /* [预览] */
     step(a, "设置(预览)", "/tmp/07-preview.ppm");
-    tap_center(a, 8, 8);                       /* 返回书库（不保存） */
+    tap_back(a);                               /* 返回书库（不保存） */
 
     /* 5) 导入 sample.txt 并阅读 */
     tap_bar(a, 2);                             /* [导入] */
     step(a, "书库(导入后)", "/tmp/08-library-imported.ppm");
 
-    tap_body_row(a, 6);                        /* 第 3 项 = 导入的书（行 2*3=6） */
+    tap_body_row(a, 2);                        /* 第 2 项 = 导入的书（行 2*1=2） */
     tap_bar(a, 0);
     step(a, "阅读 P1", "/tmp/09-reader.ppm");
     for (i = 0; i < 3; i++) tap_center(a, W - 40, H / 2);   /* 正文右半边：下一页 */
