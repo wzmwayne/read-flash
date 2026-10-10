@@ -169,9 +169,15 @@ int main(void)
         int bi = rf_app_book_id(a);
         rf_app_render(a, fb, W, H);
         dump("/tmp/16-import-info.ppm");
+        {
+            const char *txt = rf_app_dialog_text(a);
+            int has_null = (strstr(txt, "(null)") != NULL);
+            int has_path = (strstr(txt, "/import") != NULL || strstr(txt, "import") != NULL);
+            printf("  提示框文本: %s\n", has_null ? "含 (null) ✗" : "路径正常 ✓");
+            printf("  判定: 导入提示框=%d 目录路径非空=%d\n",
+                   (bi == 5 && rf_app_book_id(a) == 0), has_path && !has_null);
+        }
         tap_bar(a, 0);                         /* [确定] 关闭提示框 */
-        printf("  导入后提示框=%d（期望 5） 关闭后=%d（期望 0）\n", bi, rf_app_book_id(a));
-        printf("  判定: 导入提示框=%d\n", (bi == 5 && rf_app_book_id(a) == 0));
     }
     step(a, "书库(导入后)", "/tmp/08-library-imported.ppm");
 

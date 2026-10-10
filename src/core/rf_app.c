@@ -899,10 +899,16 @@ static void do_action(RfApp *a, int act)
         a->laid = 0;                                 /* 内容变了：作废排版 */
         {   /* 通用导入：不依赖平台文件选择器，只扫固定目录 */
             const char *dir = pal_import_dir();
-            snprintf(a->dlg, sizeof a->dlg,
-                     n > 0 ? "已导入 %d 本。\n导入目录：\n%s"
-                           : "导入目录里没有 .txt。\n把 txt 放进下面目录后\n再点 [导入]：\n%s",
-                     n, dir ? dir : "(未设置)");
+            char fallback[600];
+            if (!dir || !*dir) {                       /* 平台没给目录就退到应用数据目录下 */
+                snprintf(fallback, sizeof fallback, "%s/import", pal_app_data_dir());
+                dir = fallback;
+            }
+            if (n > 0)
+                snprintf(a->dlg, sizeof a->dlg, "已导入 %d 本。\n导入目录：\n%s", n, dir);
+            else
+                snprintf(a->dlg, sizeof a->dlg,
+                         "导入目录里没有 .txt。\n把 txt 放进下面目录后\n再点 [导入]：\n%s", dir);
             a->dlg_kind = 0;
             a->dlg_action = -1;
             a->dlg_active = 1;
@@ -1114,6 +1120,8 @@ void rf_app_metrics(const RfApp *a, int *sw, int *sh, int *wc, int *rh,
 
 /* 自检：重复/超限的组件 id 次数（应为 0） */
 int rf_app_comp_dups(const RfApp *a) { return a->comp_dup; }
+
+const char *rf_app_dialog_text(const RfApp *a) { return a->dlg; }
 
 int rf_app_body_hit(const RfApp *a, int i, int *x, int *y)
 {
