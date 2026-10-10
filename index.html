@@ -207,6 +207,19 @@ async function convertEpub(buf) {
                .split("\n").map((l) => l.replace(/\s+$/, "").replace(/^\s+/, ""))
                .filter((l, i, arr) => l !== "" || (arr[i - 1] || "") !== "")
                .join("\n").replace(/\n{3,}/g, "\n\n").trim();
+    /* 去重：正文开头与章节标题重复的行（EPUB 的 <h1> 与插入的 ## 标题重名）一律丢掉 */
+    {
+      const norm = (s) => s.replace(/^#{1,6}\s*/, "").replace(/[\s\u3000]+/g, "");
+      const tkey = norm(title);
+      const bl = body.split("\n");
+      let cut = 0;
+      while (cut < bl.length && cut < 8) {
+        const l = bl[cut];
+        if (l.trim() === "" || norm(l) === tkey) { cut++; continue; }
+        break;
+      }
+      body = bl.slice(cut).join("\n").replace(/^\n+/, "").trim() || "（本节无正文）";
+    }
     if (out.length) out.push("");
     if (brk) { out.push("---"); out.push(""); }
     out.push((h2 ? "## " : "") + title);
