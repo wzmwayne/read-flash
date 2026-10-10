@@ -3,8 +3,8 @@
 **终端风格、书页模型的极简纯文本阅读器** —— 面向极低端设备与跨平台场景。
 纯 TXT + 极简语法（标题 / 换页符），黑底终端观感，翻页即保存，一切皆书。
 
-> **当前状态**：规范冻结（v3.4.2）+ 核心算法已验证 + 安卓验证 APK 可离线构建。
-> 尚未实现完整应用（阅读界面、书库、设置、PAL 落地）。
+> **当前状态**：规范冻结（v3.4.2）+ 核心算法已验证 + **正式应用可运行**（书库 / 阅读 / 设置 / 调试 / 内置教程 / 提示框，安卓外壳 + C 应用层）。
+> 仍在早期：搜索、目录跳转、更多格式支持尚未实现。
 
 ## 验证结果（2026-10-10）
 
@@ -52,13 +52,16 @@ gcc -O2 -std=c99 -Isrc/core -o build/host/rf_verify src/core/*.c src/host/main.c
 ./build/host/rf_verify        # 期望最后一行：RESULT: PASS (失败 0)
 ```
 
-### 2) 安卓验证 APK（全离线，只用本机已装的 SDK/NDK）
+### 2) 安卓 APK（全离线，只用本机已装的 SDK/NDK）
 
 ```bash
-./tools/build_android.sh                     # 自动探测可执行的 build-tools / NDK
-adb install -r build/readflash-verify.apk
-adb logcat -s RFVERIFY:I                     # 打开 App 即跑自检，报告同时显示在屏幕
+./tools/build_android.sh app      # 正式应用 → build/readflash.apk
+./tools/build_android.sh verify   # 最小验证 → build/readflash-verify.apk
+adb install -r build/readflash.apk
 ```
+
+导入方式：把 .txt 放进 `Android/data/com.readflash.app/files/import/`，在书库点 `[导入]`。
+调试可用 Shizuku 的 rish（本仓库开发约定：只安装/调试本应用，不改系统设置、不操作其它应用）。
 
 脚本会逐工具探测（aapt2 / d8 / apksigner / zipalign / NDK clang），自动跳过宿主机无法执行的
 组件（例如 aarch64 主机上的 x86_64 预编译工具），全程**不下载任何东西**。

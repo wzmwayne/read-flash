@@ -14,6 +14,14 @@ SDK_ROOTS=()
 [ -n "${ANDROID_NDK_ROOT:-}" ] && SDK_ROOTS+=("$(dirname "$(dirname "$ANDROID_NDK_ROOT")")")
 SDK_ROOTS+=(/usr/lib/android-sdk "${ANDROID_SDK_ROOT:-}" "${ANDROID_HOME:-}" /tmp/android-sdk)
 
+# ---- 构建目标：app（正式应用） / verify（最小验证） ----
+TARGET="${1:-app}"
+case "$TARGET" in
+  app)    SRC="$ROOT/android/app";    LIB=readflash; APKNAME=readflash.apk;        JNI=rf_app_jni.c ;;
+  verify) SRC="$ROOT/android/verify"; LIB=rfverify;  APKNAME=readflash-verify.apk; JNI=rf_jni.c ;;
+  *) echo "用法: $0 [app|verify]" >&2; exit 1 ;;
+esac
+
 API="${ANDROID_API:-26}"
 ABI="${ANDROID_ABI:-arm64-v8a}"
 case "$ABI" in
@@ -30,6 +38,16 @@ try_tool() {
   if "$exe" "$@" >/dev/null 2>&1; then rc=0; else rc=$?; fi
   [ "$rc" -lt 126 ]
 }
+list_tools() {   # $1 = 工具名：列出所有候选（按版本新→旧）
+  local name="$1" root d
+  for root in "${SDK_ROOTS[@]}"; do
+    [ -d "$root/build-tools" ] || continue
+    for d in $(ls -d "$root"/build-tools/*/ 2>/dev/null | sort -Vr); do
+      [ -x "${d}${name}" ] && echo "${d%/}/${name}"
+    done
+  done
+}
+
 probe_tool() {   # $1 = 工具名，其余为探测参数
   local name="$1"; shift
   local root d exe
@@ -74,7 +92,7 @@ probe_ndk() {
 }
 
 AAPT2="${AAPT2:-$(probe_tool aapt2 version)}" || { echo "找不到可执行的 aapt2" >&2; exit 1; }
-D8="${D8:-$(probe_tool d8 --version)}"       || { echo "找不到可执行的 d8" >&2; exit 1; }
+D8="${D8:-$(probe_tool d8 --version || true)}"   # 仅作展示；实际在步骤 2 逐个实测
 APKSIGNER="${APKSIGNER:-$(probe_tool apksigner version)}" || { echo "找不到可执行的 apksigner" >&2; exit 1; }
 ZIPALIGN="$(probe_tool zipalign -h || true)"   # 可选：本机无可用 zipalign 时跳过对齐
 
@@ -87,10 +105,10 @@ else
 fi
 SYSROOT="$NDK/toolchains/llvm/prebuilt/$PRE/sysroot"
 
-APP="$ROOT/android/app/src/main"
+APP="$SRC"
 OUT="$ROOT/build/android"
 KS="$ROOT/build/debug.keystore"
-APK="$ROOT/build/readflash-verify.apk"
+APK="$ROOT/build/$APKNAME"
 
 echo "aapt2       = $AAPT2"
 echo "d8          = $D8"
@@ -99,27 +117,42 @@ echo "zipalign    = ${ZIPALIGN:-（本机无可用版本，跳过对齐）}"
 echo "platform    = $PLATFORM"
 echo "NDK         = $NDK ($PRE)"
 echo "CC          = $CC"
-echo "ABI / API   = $ABI / $API"
+echo "目标 / ABI  = $TARGET ($LIB) / $ABI, API $API"
 
 rm -rf "$OUT"
 mkdir -p "$OUT/classes" "$OUT/dex" "$OUT/stage/lib/$ABI" "$OUT/lib/$ABI"
 
 echo "[1/6] javac"
 javac -nowarn -source 8 -target 8 -bootclasspath "$PLATFORM" \
-      -d "$OUT/classes" "$APP/java/com/readflash/verify/MainActivity.java"
+      -d "$OUT/classes" $(find "$APP/java" -name '*.java')
 
 echo "[2/6] d8 -> classes.dex"
-"$D8" --lib "$PLATFORM" --min-api "$API" --output "$OUT/dex" \
-      "$OUT/classes/com/readflash/verify/MainActivity.class"
+# 必须把 javac 产出的全部 class（含匿名内部类 MainActivity$1）都交给 d8；
+# 旧版 R8 处理嵌套匿名类会内部报错，故逐个候选实测，选第一个能成功的。
+CLASSES="$(find "$OUT/classes" -name '*.class' | sort)"
+D8_USED=""
+for cand in $(list_tools d8); do
+  rm -rf "$OUT/dex"; mkdir -p "$OUT/dex"
+  if "$cand" --lib "$PLATFORM" --min-api "$API" --output "$OUT/dex" $CLASSES \
+        >"$OUT/d8.log" 2>&1 && [ -s "$OUT/dex/classes.dex" ]; then
+    D8_USED="$cand"; break
+  fi
+done
+if [ -z "$D8_USED" ]; then
+  echo "所有候选 d8 均失败，最后一个的日志：" >&2
+  tail -20 "$OUT/d8.log" >&2
+  exit 1
+fi
+echo "      d8 = $D8_USED"
 cp "$OUT/dex/classes.dex" "$OUT/stage/classes.dex"
 
-echo "[3/6] clang -> librfverify.so ($ABI)"
+echo "[3/6] clang -> lib$LIB.so ($ABI)"
 "$CC" -O2 -fPIC -shared -Wall \
       --sysroot="$SYSROOT" \
       -I"$ROOT/src/core" \
-      -o "$OUT/lib/$ABI/librfverify.so" \
-      "$ROOT"/src/core/*.c "$APP/jni/rf_jni.c"
-cp "$OUT/lib/$ABI/librfverify.so" "$OUT/stage/lib/$ABI/"
+      -o "$OUT/lib/$ABI/lib$LIB.so" \
+      "$ROOT"/src/core/*.c "$ROOT"/src/pal/pal_posix.c "$APP/jni/$JNI"
+cp "$OUT/lib/$ABI/lib$LIB.so" "$OUT/stage/lib/$ABI/"
 
 echo "[4/6] aapt2 link"
 "$AAPT2" link -I "$PLATFORM" --manifest "$APP/AndroidManifest.xml" \

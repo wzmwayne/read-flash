@@ -180,4 +180,89 @@ u64 rf_test_gen_main(u8 *buf, u64 cap);
 /* 运行 §16 最小验证 + 不重不漏；返回 0 全部通过。out 写入报告文本。 */
 int rf_selftest(char *out, size_t outsz);
 
+/* ---------------- 平台（PAL） ---------------- */
+/* 由平台层注入应用数据目录；返回静态字符串。 */
+void pal_set_dirs(const char *app_data, const char *import_dir);
+const char *pal_app_data_dir(void);
+const char *pal_import_dir(void);
+u64 pal_ticks_ms(void);
+u64 pal_now_unix(void);
+
+/* ---------------- 字形提供者（D8：排版不依赖字体，字形按网格约束绘制） ---------------- */
+/* 取一个码点的 alpha 位图：alpha 缓冲容量 cap 字节，返回写入的宽高。成功返回 1。 */
+typedef int (*RfGlyphFn)(void *ud, u32 cp, int px, u8 *alpha, int cap, int *gw, int *gh);
+void rf_glyph_set_provider(RfGlyphFn fn, void *ud);
+void rf_glyph_reset(void);
+int  rf_glyph_get(u32 cp, int px, const u8 **alpha, int *w, int *h);
+/* 内置 8x16 ASCII 位图字体（宿主预览/无平台字体时使用）；超出范围的码点返回方框。 */
+int  rf_glyph_builtin(void *ud, u32 cp, int px, u8 *alpha, int cap, int *gw, int *gh);
+
+/* ---------------- 存储（§4.1 设置、§9 存储格式） ---------------- */
+#define RF_MAX_BOOKS 256
+#define RF_MAX_INDEX 4096          /* index1 条目上限（K ≥ 2^24 时才可能更多） */
+
+typedef struct {
+    char root[512];                /* 应用数据目录 */
+    RfSettings settings;           /* 当前设置（settingsSaved） */
+    char status[192];              /* 底栏提示行文本 */
+} RfStore;
+
+typedef struct {
+    char id[16];                   /* book/<ID>/ */
+    char title[128];               /* .config 书名 */
+    u64  size;                     /* 正文字节数 */
+    u64  lines;                    /* 行数 L */
+} RfBookEnt;
+
+typedef struct {
+    u64 L, S, K, N;
+    u64 *arr;                      /* 指向外部提供的 RF_MAX_INDEX 数组 */
+} RfIndex;
+
+void rf_store_init(RfStore *st, const char *root);
+int  rf_settings_load(RfStore *st);
+int  rf_settings_save(RfStore *st);
+int  rf_books_scan(RfStore *st, RfBookEnt *out, int max);
+int  rf_book_import(RfStore *st, const char *src_path, char *out_id, size_t cap);
+int  rf_book_delete(RfStore *st, const char *id);
+
+int  rf_index_build(RfStore *st, const char *id, const u8 *data, u64 len, RfIndex *ix,
+                    u64 *storage, int write_file);
+int  rf_index_load(RfStore *st, const char *id, const u8 *data, u64 len, RfIndex *ix,
+                   u64 *storage);
+u64  rf_index_locate(const RfIndex *ix, const u8 *data, u64 off_hint, u64 line);
+
+int  rf_progress_save(RfStore *st, const char *id, u64 line, u64 off, u64 total);
+int  rf_progress_load(RfStore *st, const char *id, u64 *line, u64 *off);
+
+/* ---------------- 应用（书树 + 渲染 + 触摸） ---------------- */
+#define RF_BOOK_LIBRARY  0
+#define RF_BOOK_READER   1
+#define RF_BOOK_SETTINGS 2
+#define RF_BOOK_DEBUG    3
+#define RF_BOOK_TUTORIAL 4
+#define RF_BOOK_DIALOG   5
+
+typedef struct RfApp RfApp;
+
+RfApp *rf_app_create(RfStore *st, int screen_w, int screen_h, int density);
+void   rf_app_resize(RfApp *a, int screen_w, int screen_h, int density);
+void   rf_app_tap(RfApp *a, int x, int y);
+void   rf_app_key_back(RfApp *a);
+/* 渲染到 RGB565 帧缓冲（尺寸须与 app 的屏幕尺寸一致）；返回 1 表示画面有变化 */
+int    rf_app_render(RfApp *a, u16 *fb, int fw, int fh);
+void   rf_app_destroy(RfApp *a);
+
+/* 宿主预览/自检用：暴露当前网格（字号变化后坐标会变，测试必须用它） */
+void   rf_app_metrics(const RfApp *a, int *sw, int *sh, int *wc, int *rh,
+                      int *cols, int *rows, int *body_x, int *body_y, int *bar_y);
+
+/* 宿主预览/自检用：命中框查询（返回动作 id，0 表示无） */
+int    rf_app_bar_hit(const RfApp *a, int i, int *x);
+int    rf_app_body_hit(const RfApp *a, int i, int *x, int *y);
+
+/* 宿主预览/自检用：取当前画面信息 */
+int    rf_app_book_id(const RfApp *a);
+u64    rf_app_frame_hash(const RfApp *a);
+
 #endif /* RF_H */

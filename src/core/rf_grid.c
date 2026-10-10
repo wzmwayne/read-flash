@@ -67,16 +67,16 @@ void rf_grid_build(RfGrid *g, const RfSettings *s,
     extra = (screen_h - 3 * g->rh - g->m_top - g->m_bot) - g->rows * g->rh;
     if (extra > 0) g->m_bot += extra;
 
-    /* 区域矩形 */
-    g->top_bar.x = 0;               g->top_bar.y = 0;
-    g->top_bar.w = screen_w;        g->top_bar.h = g->rh;
+    /* 区域矩形：上下左右边距作用于**整个绘制面**（顶栏/正文/底栏都在边距之内） */
+    g->top_bar.x = g->m_left;            g->top_bar.y = g->m_top;
+    g->top_bar.w = g->cols * g->wc;      g->top_bar.h = g->rh;
 
-    g->body.x = g->m_left;          g->body.y = g->rh + g->m_top;
-    g->body.w = g->cols * g->wc;    g->body.h = g->rows * g->rh;
+    g->body.x = g->m_left;               g->body.y = g->m_top + g->rh;
+    g->body.w = g->cols * g->wc;         g->body.h = g->rows * g->rh;
 
-    g->btn_bar.x = 0;               g->btn_bar.y = screen_h - 2 * g->rh;
-    g->btn_bar.w = screen_w;        g->btn_bar.h = g->rh;
+    g->btn_bar.x = g->m_left;            g->btn_bar.y = g->body.y + g->body.h;
+    g->btn_bar.w = g->cols * g->wc;      g->btn_bar.h = g->rh;
 
-    g->pager_bar.x = 0;             g->pager_bar.y = screen_h - g->rh;
-    g->pager_bar.w = screen_w;      g->pager_bar.h = g->rh;
+    g->pager_bar.x = g->m_left;          g->pager_bar.y = g->btn_bar.y + g->rh;
+    g->pager_bar.w = g->cols * g->wc;    g->pager_bar.h = g->rh;
 }

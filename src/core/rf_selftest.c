@@ -157,8 +157,12 @@ static void check_grid(Rpt *r)
             fail(r, "%s: 正文矩形与网格不符", tag);
         if (g.top_bar.h != g.rh || g.btn_bar.h != g.rh || g.pager_bar.h != g.rh)
             fail(r, "%s: 顶栏/底栏高度 != 基础行高", tag);
-        if (g.pager_bar.y + g.rh != SH[i] || g.btn_bar.y != SH[i] - 2 * g.rh)
-            fail(r, "%s: 底栏未贴屏幕底部", tag);
+        if (g.top_bar.x != g.m_left || g.top_bar.w != g.body.w ||
+            g.btn_bar.x != g.m_left || g.pager_bar.w != g.body.w)
+            fail(r, "%s: 顶栏/底栏未与正文同宽（边距未覆盖整面）", tag);
+        if (g.top_bar.y != g.m_top || g.btn_bar.y != g.body.y + g.body.h ||
+            g.pager_bar.y != g.btn_bar.y + g.rh)
+            fail(r, "%s: 顶栏/正文/底栏纵向不连续", tag);
         if (g.body.y != g.rh + g.m_top)
             fail(r, "%s: 正文 y != 顶栏 + 上边距", tag);
 
@@ -173,6 +177,9 @@ static void check_grid(Rpt *r)
                 fail(r, "%s: 垂直方向未铺满（网格未对齐）", tag);
             if (g.body.y + g.body.h > g.btn_bar.y)
                 fail(r, "%s: 正文侵占底栏", tag);
+            if (g.pager_bar.y + g.rh + g.m_bot != SH[i] ||
+                g.btn_bar.y != SH[i] - g.m_bot - 2 * g.rh)
+                fail(r, "%s: 底栏未在边距内贴底", tag);
         }
     }
     rp(r, "[1/3] 网格不变量: %d 组合, 失败 %d, 溢出降级 %d, 超 V 跳过 %d\n",
