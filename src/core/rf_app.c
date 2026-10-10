@@ -91,6 +91,8 @@ struct RfApp {
     int sel_hit_arg;                        /* 命中组件的 arg（目录条目下标等） */
     int last_act;                           /* 调试：最近一次派发的动作 */
     int toc_n;                              /* 目录：标题条目数（扁平，文件顺序） */
+    int toc_src[256];                       /* 条目所在的源行号（1-based） */
+    u16 toc_fg[256];                        /* 条目颜色（正在读橙/已读灰/未读白） */
     u64 toc_line[256];
     char toc_txt[256][120];
     u8  toc_seen[32];                       /* 每章 1 bit：曾经到达过（已读） */
@@ -581,19 +583,38 @@ static void gen_toc(RfApp *a)
         for (i = 0; i < a->toc_n; i++) {
             u16 fg = (i == cur) ? C_ORANGE
                    : ((a->toc_seen[i >> 3] & (1u << (i & 7))) ? C_DIM : C_TEXT);
-            int row = grow(a), c0 = gcol(a);
+            a->toc_src[i] = grow(a);
+            a->toc_fg[i] = fg;
+            (void)id;
             gputs(a, a->toc_txt[i]);
             gputs(a, "\n");
-            snprintf(id, sizeof id, "toc.item.%d", i);
-            {
-                RfComp *c = comp_reg(a, id, RF_BAND_BODY, row, c0, c0 + 40, ACT_TOC_JUMP,
-                                     RF_C_RADIO, i == cur, 1, fg, fg);
-                if (c) c->arg = i;
-            }
         }
     }
     a->data = (const u8 *)a->gen;
     a->data_len = a->gen_len;
+}
+
+/* 目录页：把当前页每一渲染行绑到对应的目录条目（翻页后重新绑定，命中永远与所见一致） */
+static void bind_toc_comps(RfApp *a)
+{
+    int i, k;
+    char id[24];
+    if (a->book != RF_BOOK_TOC) return;
+    for (i = 0; i < a->g.rows && i < RF_MAX_ROWS; i++) {
+        int src = (int)a->rows[i].line;                 /* 该渲染行的源行号 */
+        if (a->rows[i].kind == RF_ROW_BLANK) continue;
+        for (k = 0; k < a->toc_n; k++) {
+            if (a->toc_src[k] != src) continue;
+            snprintf(id, sizeof id, "toc.item.%d", k);
+            {
+                RfComp *c = comp_reg(a, id, RF_BAND_BODY, i + 1, 0, a->g.cols,
+                                     ACT_TOC_JUMP, RF_C_RADIO,
+                                     k == cur_chapter(a), 1, a->toc_fg[k], a->toc_fg[k]);
+                if (c) c->arg = k;
+            }
+            break;
+        }
+    }
 }
 
 static void gen_library(RfApp *a)
@@ -606,6 +627,23 @@ static void gen_library(RfApp *a)
         const char *t = (i == 0) ? "应用使用教程" : a->books[i - 1].title;
         snprintf(id, sizeof id, "lib.item.%d", i);
         gitem(a, id, ACT_SELECT, i == a->sel, t);
+        {   /* 右侧显示阅读进度 */
+            int pct = -1;
+            if (i > 0) {
+                u64 pl = 0, po = 0;
+                if (rf_progress_load(a->st, a->books[i - 1].id, &pl, &po) == 0 && a->books[i - 1].lines > 0)
+                    pct = (int)(pl * 100ull / (u64)a->books[i - 1].lines);
+            } else {
+                pct = 100;                      /* 内置教程视为已读 */
+            }
+            if (pct >= 0) {
+                char pb[16];
+                int used = 3 + (int)strlen(t) + 2;
+                snprintf(pb, sizeof pb, "%d%%", pct);
+                while (used + (int)strlen(pb) < a->g.cols) { gputs(a, " "); used++; }
+                gputs(a, pb);
+            }
+        }
         gputs(a, "\n\n");
     }
     a->data = (const u8 *)a->gen;
@@ -784,6 +822,8 @@ static void layout(RfApp *a)
     rf_doc_init(&d, a->data, a->data_len, rf_count_lines(a->data, a->data_len));
     rf_page_layout(&d, &a->g, &a->mode, a->off, a->line ? a->line : 1, &a->page, a->rows);
     a->laid = 1;
+    bind_toc_comps(a);       /* 目录页：按本页渲染行绑定条目（翻页后自动重绑） */
+    update_system_comps(a);  /* 排版完成即刷新翻页键可用状态 */
 }
 
 static void page_next(RfApp *a)
@@ -1013,6 +1053,14 @@ int rf_app_render(RfApp *a, u16 *fb, int fw, int fh)
                   a->g.btn_bar.x + a->g.wc,
                   a->g.btn_bar.y + (a->g.rh - a->g.rh) / 2, a->g.fp, 1, 1,
                   C_BTN, a->g.cols, RF_BAND_BTN, 0, a->g.rh, 0, 0);
+        if (a->book == RF_BOOK_READER && a->data_len > 0) {      /* 进度显示在底栏按钮行右侧 */
+            char pb[16];
+            unsigned long long pct = a->off * 100ull / a->data_len;
+            snprintf(pb, sizeof pb, "%llu%%", pct);
+            draw_text(a, fb, fw, fh, (const u8 *)pb, strlen(pb),
+                      a->g.btn_bar.x + a->g.btn_bar.w - (int)strlen(pb) * a->g.wc - a->g.wc,
+                      a->g.btn_bar.y, a->g.fp, 1, 1, C_DIM, 6, RF_BAND_BTN, 0, a->g.rh, 0, 0);
+        }
     /* 底栏下行：翻页行（左 <，右 >） */
     fill(fb, fw, fh, a->g.pager_bar.x, a->g.pager_bar.y, a->g.pager_bar.w, 1, C_SEP);
     {
@@ -1372,6 +1420,8 @@ int rf_app_comp_dups(const RfApp *a) { return a->comp_dup; }
 const char *rf_app_dialog_text(const RfApp *a) { return a->dlg; }
 int rf_app_last_action(const RfApp *a) { return a->last_act; }
 int rf_app_toc_count(const RfApp *a) { return a->toc_n; }
+int rf_app_cur_line(const RfApp *a) { return (int)a->line; }
+u64 rf_app_toc_line(const RfApp *a, int i) { return (i >= 0 && i < a->toc_n) ? a->toc_line[i] : 0; }
 
 /* 平台选择器完成（已把文件拷进导入目录）：刷新导入页面 */
 void rf_app_on_files_picked(int n)
