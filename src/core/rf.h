@@ -293,6 +293,8 @@ int    rf_app_row_at(const RfApp *a, int y);
 /* 调试/自检：当前页行区间是否全部有效（防乱码回归） */
 int    rf_app_rows_valid(const RfApp *a);
 int    rf_app_comp_dups(const RfApp *a);
+int    rf_app_last_action(const RfApp *a);   /* 调试：最近派发的动作 */
+int    rf_app_toc_count(const RfApp *a);     /* 调试/自检：目录条目数 */
 const char *rf_app_dialog_text(const RfApp *a);   /* 调试/自检：当前提示框文本 */   /* 调试/自检：重复组件 id 次数（应为 0） */
 
 /* 宿主预览/自检用：暴露当前网格（字号变化后坐标会变，测试必须用它） */

@@ -51,6 +51,7 @@ typedef struct {
     int band, row;          /* 正文带 row = 1-based 文本行 */
     int c0, c1;             /* 半角列区间 [c0, c1) */
     int act, kind, on, enabled;
+    int arg;                /* 参数化动作的实参（如目录条目下标） */
     u16 fg_marker, fg_label;
 } RfComp;
 
@@ -87,6 +88,8 @@ struct RfApp {
     char dlg[192];
     int dlg_active, dlg_action, dlg_kind;   /* dlg_kind: 0=信息提示, 1=删除确认 */
     int sel_hit_row;                        /* 正文带命中行（ACT_SELECT 用） */
+    int sel_hit_arg;                        /* 命中组件的 arg（目录条目下标等） */
+    int last_act;                           /* 调试：最近一次派发的动作 */
     int toc_n;                              /* 目录：标题条目数（扁平，文件顺序） */
     u64 toc_line[256];
     char toc_txt[256][120];
@@ -148,6 +151,8 @@ static void book_path_join(char *dst, size_t cap, const char *root, const char *
 {
     snprintf(dst, cap, "%s/book/%s/%s", root, id, name);
 }
+
+static void update_system_comps(RfApp *a);
 
 static void ginit(RfApp *a)
 {
@@ -510,6 +515,7 @@ static void load_toc(RfApp *a, const char *id)
         }
     }
     fclose(f);
+    fprintf(stderr, "[toc] %s → %d 条\n", path, a->toc_n);
     /* 访问位 */
     memset(a->toc_seen, 0, sizeof a->toc_seen);
     book_path_join(path, sizeof path, a->st->root, id, ".read");
@@ -571,7 +577,7 @@ static void gen_toc(RfApp *a)
     char id[24];
     ginit(a);
     if (a->toc_n == 0) {
-        gputs(a, "（这本书没有 # 标题，无法生成目录）\n");
+        gputs(a, "目录为空。\n这本书里没有 # / ## / ### 标题。\n正文仍可正常阅读，翻页不受影响。\n");
     } else {
         for (i = 0; i < a->toc_n; i++) {
             u16 fg = (i == cur) ? C_ORANGE
@@ -580,8 +586,11 @@ static void gen_toc(RfApp *a)
             gputs(a, a->toc_txt[i]);
             gputs(a, "\n");
             snprintf(id, sizeof id, "toc.item.%d", i);
-            comp_reg(a, id, RF_BAND_BODY, row, c0, c0 + 40, ACT_TOC_JUMP, RF_C_RADIO,
-                     i == cur, 1, fg, fg);
+            {
+                RfComp *c = comp_reg(a, id, RF_BAND_BODY, row, c0, c0 + 40, ACT_TOC_JUMP,
+                                     RF_C_RADIO, i == cur, 1, fg, fg);
+                if (c) c->arg = i;
+            }
         }
     }
     a->data = (const u8 *)a->gen;
@@ -1014,6 +1023,7 @@ int rf_app_render(RfApp *a, u16 *fb, int fw, int fh)
 
 static void do_action(RfApp *a, int act)
 {
+    a->last_act = act;
     RfSettings *s = &a->editing;
     switch (act) {
     case ACT_BACK:
@@ -1039,7 +1049,7 @@ static void do_action(RfApp *a, int act)
     case ACT_SETTINGS: stack_push(a, RF_BOOK_SETTINGS); return;
     case ACT_TOC:       stack_push(a, RF_BOOK_TOC); return;
     case ACT_TOC_JUMP: {
-        int idx = a->sel_hit_row - 1;               /* 目录条目一行一个 */
+        int idx = a->sel_hit_arg;                   /* 组件登记时写入的条目下标 */
         if (idx >= 0 && idx < a->toc_n) {
             a->line = a->toc_line[idx];
             a->off = rf_index_locate(&a->ix, a->data, 0, a->line);
@@ -1257,6 +1267,7 @@ void rf_app_tap(RfApp *a, int x, int y)
             RfComp *c = comp_find(a, RF_BAND_BODY, row + 1, col);
             if (c) {
                 a->sel_hit_row = row + 1;
+                a->sel_hit_arg = c->arg;
                 do_action(a, c->act);
                 return;
             }
@@ -1345,6 +1356,8 @@ void rf_app_metrics(const RfApp *a, int *sw, int *sh, int *wc, int *rh,
 int rf_app_comp_dups(const RfApp *a) { return a->comp_dup; }
 
 const char *rf_app_dialog_text(const RfApp *a) { return a->dlg; }
+int rf_app_last_action(const RfApp *a) { return a->last_act; }
+int rf_app_toc_count(const RfApp *a) { return a->toc_n; }
 
 /* 平台选择器完成（已把文件拷进导入目录）：刷新导入页面 */
 void rf_app_on_files_picked(int n)

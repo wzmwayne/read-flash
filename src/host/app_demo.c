@@ -234,7 +234,8 @@ int main(void)
         dump("/tmp/17-toc.ppm");
         rf_app_tap(a, bx + wc, by + rh + rh / 2);   /* 点目录第 1 条 */
         b2 = rf_app_book_id(a);
-        printf("  目录: 阅读=%d → 目录页=%d → 跳转后=%d\n", b0, b1, b2);
+        printf("  目录: 阅读=%d → 目录页=%d → 跳转后=%d 条目数=%d 命中动作=%d\n",
+               b0, b1, b2, rf_app_toc_count(a), rf_app_last_action(a));
         printf("  判定: 目录页与跳转=%d\n", (b0 == 1 && b1 == 7 && b2 == 1));
     }
 
