@@ -33,6 +33,15 @@ static void (*g_exit_hook)(void);
 
 void pal_set_exit_hook(void (*fn)(void)) { g_exit_hook = fn; }
 
+static void (*g_pick_hook)(void);
+
+void pal_set_pick_hook(void (*fn)(void)) { g_pick_hook = fn; }
+
+void pal_pick_files(void)
+{
+    if (g_pick_hook) g_pick_hook();      /* 平台弹系统选择器（异步） */
+}
+
 void pal_app_exit(void)
 {
     if (g_exit_hook) g_exit_hook();      /* 平台接管（安卓：结束 Activity） */

@@ -202,6 +202,12 @@ u64 pal_now_unix(void);
 /* 退出应用：平台层实现（安卓 finishAffinity、iOS 退出主循环）；宿主直接 exit(0) */
 void pal_app_exit(void);
 void pal_set_exit_hook(void (*fn)(void));
+/* 平台文件选择器（Android: SAF / iOS: UIDocumentPicker）。异步：启动后返回 0；
+ * 平台把选中的文件拷进导入目录后，调用 C 侧 rf_app_on_files_picked() 通知。 */
+void pal_set_pick_hook(void (*fn)(void));
+void pal_pick_files(void);
+/* 通知应用：已导入 n 个文件到导入目录（平台在选择完成后调用） */
+void rf_app_on_files_picked(int n);
 
 /* ---------------- 字形提供者（D8：排版不依赖字体，字形按网格约束绘制） ---------------- */
 /* 取一个码点的 alpha 位图：alpha 缓冲容量 cap 字节，返回写入的宽高。成功返回 1。 */
@@ -262,6 +268,7 @@ int  rf_progress_load(RfStore *st, const char *id, u64 *line, u64 *off);
 #define RF_BOOK_DEBUG    3
 #define RF_BOOK_TUTORIAL 4
 #define RF_BOOK_DIALOG   5
+#define RF_BOOK_IMPORT   6
 
 typedef struct RfApp RfApp;
 

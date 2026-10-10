@@ -57,6 +57,17 @@ static void android_exit(void)
     }
 }
 
+/* 平台文件选择：交给 Java 的 SAF 选择器（异步） */
+static void android_pick(void)
+{
+    JNIEnv *env = env_get();
+    jmethodID mid;
+    if (!env || !g_cls) return;
+    mid = (*env)->GetStaticMethodID(env, g_cls, "pickFiles", "()V");
+    if (mid) (*env)->CallStaticVoidMethod(env, g_cls, mid);
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+}
+
 static void fb_alloc(int w, int h)
 {
     if (g_fb) { free(g_fb); g_fb = NULL; }
@@ -91,6 +102,7 @@ Java_com_readflash_app_MainActivity_nativeInit(JNIEnv *env, jclass cls,
 
     pal_set_dirs(g_data_dir, g_import_dir);
     pal_set_exit_hook(android_exit);
+    pal_set_pick_hook(android_pick);
     rf_glyph_set_provider(android_glyph, NULL);
 
     rf_store_init(&g_store, g_data_dir);
@@ -149,6 +161,14 @@ Java_com_readflash_app_MainActivity_nativeRender(JNIEnv *env, jclass cls, jintAr
         buf[i] = (jint)(0xFF000000u | (r << 16) | (g << 8) | b);
     }
     (*env)->ReleasePrimitiveArrayCritical(env, px, buf, 0);
+}
+
+/* Java 侧选择完成后回调：刷新导入页面 */
+JNIEXPORT void JNICALL
+Java_com_readflash_app_MainActivity_nativeOnPicked(JNIEnv *env, jclass cls, jint n)
+{
+    (void)env; (void)cls;
+    rf_app_on_files_picked((int)n);
 }
 
 /* 便于用 rish 抓运行时信息 */

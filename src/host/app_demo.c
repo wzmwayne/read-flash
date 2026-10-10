@@ -178,21 +178,21 @@ int main(void)
     tap_back(a);                               /* 返回书库（不保存） */
 
     /* 5) 导入 sample.txt 并阅读 */
-    tap_bar(a, 2);                             /* [导入] → 弹提示框（含导入目录） */
+    tap_bar(a, 2);                             /* [导入] → 进入导入页面（复选列表） */
     {
-        int bi = rf_app_book_id(a);
+        int bi = rf_app_book_id(a);            /* 期望 6 = 导入页面 */
         rf_app_render(a, fb, W, H);
-        dump("/tmp/16-import-info.ppm");
+        dump("/tmp/16-import-page.ppm");
+        printf("  导入页面书=%d（期望 6）\n", bi);
+        tap_bar(a, 1);                         /* [导入这些] → 提示框 */
         {
+            int bd = rf_app_book_id(a);
             const char *txt = rf_app_dialog_text(a);
-            int has_null = (strstr(txt, "(null)") != NULL);
-            int has_path = (strstr(txt, "/import") != NULL || strstr(txt, "import") != NULL);
-            printf("  提示框文本: %s\n", has_null ? "含 (null) ✗" : "路径正常 ✓");
-            printf("  提示框=%d 目录路径非空=%d\n", bi == 5, has_path && !has_null);
+            printf("  导入结果提示框=%d（期望 5）文本含 null=%d\n",
+                   bd, strstr(txt, "(null)") != NULL);
+            tap_bar(a, 0);                     /* [确定] */
+            printf("  判定: 导入页面与结果提示=%d\n", bi == 6 && bd == 5);
         }
-        tap_bar(a, 0);                         /* [确定] 关闭提示框 */
-        printf("  判定: 导入提示框=%d 关闭后回书库=%d\n",
-               (bi == 5), rf_app_book_id(a) == 0);
     }
     step(a, "书库(导入后)", "/tmp/08-library-imported.ppm");
 

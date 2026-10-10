@@ -26,7 +26,7 @@ enum {
     ACT_FONT_DN, ACT_FONT_UP, ACT_SP_DN, ACT_SP_UP,
     ACT_ML_DN, ACT_ML_UP, ACT_MT_DN, ACT_MT_UP, ACT_LH_DN, ACT_LH_UP, ACT_LH_AUTO, ACT_LIVE,
     ACT_PREVIEW, ACT_SAVE, ACT_DEBUG, ACT_REBUILD, ACT_RESET, ACT_SETTINGS,
-    ACT_PAGE_PREV, ACT_PAGE_NEXT, ACT_SELECT,
+    ACT_PAGE_PREV, ACT_PAGE_NEXT, ACT_SELECT, ACT_IMP_CANCEL, ACT_IMP_DO, ACT_IMP_PICK, ACT_IMP_TOGGLE,
     ACT_DLG_OK, ACT_DLG_CANCEL, ACT_BACK
 };
 
@@ -83,12 +83,17 @@ struct RfApp {
     char dlg[192];
     int dlg_active, dlg_action, dlg_kind;   /* dlg_kind: 0=信息提示, 1=删除确认 */
     int sel_hit_row;                        /* 正文带命中行（ACT_SELECT 用） */
+    int imp_n;                              /* 导入页面：可导入文件数 */
+    int imp_checked[64];
+    char imp_name[64][128];
 
     char bar[192];
     RfComp comp[RF_COMP_MAX];
     int ncomp;
     int comp_dup;                              /* 注册到重复 id 的次数（自检用） */
 };
+
+static RfApp *g_app_ref;      /* 当前应用实例：平台回调（选择器/生命周期）用 */
 
 /* ---------------- 生成式书内容 ---------------- */
 
@@ -406,6 +411,61 @@ static void gen_dialog(RfApp *a)
     a->data_len = a->gen_len;
 }
 
+/* 扫描导入目录里的 .txt（通用做法：只依赖普通文件操作） */
+static int scan_import_dir(RfApp *a)
+{
+    const char *dir = pal_import_dir();
+    DIR *d;
+    struct dirent *de;
+    int n = 0;
+    char fallback[600];
+    if (!dir || !*dir) {
+        snprintf(fallback, sizeof fallback, "%s/import", pal_app_data_dir());
+        dir = fallback;
+    }
+    mkdir(dir, 0770);
+    d = opendir(dir);
+    if (!d) { a->imp_n = 0; return 0; }
+    while ((de = readdir(d)) != NULL && n < 64) {
+        size_t l = strlen(de->d_name);
+        if (l < 4 || l >= sizeof a->imp_name[0]) continue;
+        if (strcasecmp(de->d_name + l - 4, ".txt") != 0) continue;
+        snprintf(a->imp_name[n], sizeof a->imp_name[0], "%s", de->d_name);
+        n++;
+    }
+    closedir(d);
+    a->imp_n = n;
+    return n;
+}
+
+/* 导入页面：列出导入目录里的书，复选；底栏 [取消] [导入这些] [选择] */
+static void gen_import(RfApp *a)
+{
+    const char *dir = pal_import_dir();
+    char fallback[600];
+    int i;
+    char id[24];
+    ginit(a);
+    if (!dir || !*dir) {
+        snprintf(fallback, sizeof fallback, "%s/import", pal_app_data_dir());
+        dir = fallback;
+    }
+    gputs(a, "导入目录\n");
+    gputs(a, dir);
+    gputs(a, "\n\n");
+    if (a->imp_n == 0) {
+        gputs(a, "（空）把 .txt 放进来，或用下方 [选择] 挑文件。\n");
+    } else {
+        for (i = 0; i < a->imp_n; i++) {
+            snprintf(id, sizeof id, "imp.item.%d", i);
+            gcheck(a, id, ACT_IMP_TOGGLE, a->imp_checked[i], a->imp_name[i]);
+            gputs(a, "\n");
+        }
+    }
+    a->data = (const u8 *)a->gen;
+    a->data_len = a->gen_len;
+}
+
 static void gen_library(RfApp *a)
 {
     int i;
@@ -458,6 +518,11 @@ static void set_bar(RfApp *a)
     case RF_BOOK_DEBUG:
         bar_add(a, ACT_REBUILD, "重建索引");
         bar_add(a, ACT_RESET, "重置进度");
+        break;
+    case RF_BOOK_IMPORT:
+        bar_add(a, ACT_IMP_CANCEL, "取消");
+        bar_add(a, ACT_IMP_DO, "导入这些");
+        bar_add(a, ACT_IMP_PICK, "选择");
         break;
     case RF_BOOK_DIALOG:
         bar_add(a, ACT_DLG_OK, "确定");
@@ -550,6 +615,8 @@ static void open_book(RfApp *a, int book)
         snprintf(a->title, sizeof a->title, "设置");
         break;
     case RF_BOOK_DEBUG:    gen_debug(a);    snprintf(a->title, sizeof a->title, "调试"); break;
+    case RF_BOOK_IMPORT:   scan_import_dir(a); gen_import(a);
+                           snprintf(a->title, sizeof a->title, "导入"); break;
     case RF_BOOK_DIALOG:   gen_dialog(a);   snprintf(a->title, sizeof a->title, "提示"); break;
     default:               gen_library(a);  snprintf(a->title, sizeof a->title, "书库"); break;
     }
@@ -880,42 +947,43 @@ static void do_action(RfApp *a, int act)
         a->dlg_kind = 0;
         stack_pop(a);
         return;
-    case ACT_IMPORT: {
+    case ACT_IMPORT: {                           /* 进入导入页面（私有导入目录 + 复选） */
+        static int first = 1;
+        scan_import_dir(a);
+        if (first) { int k; for (k = 0; k < 64; k++) a->imp_checked[k] = 1; first = 0; }
+        stack_push(a, RF_BOOK_IMPORT);
+        return;
+    }
+    case ACT_IMP_CANCEL: stack_pop(a); return;
+    case ACT_IMP_PICK:   pal_pick_files(); return;      /* 平台选择器（SAF / 文档选择器） */
+    case ACT_IMP_TOGGLE: {
+        int idx = a->sel_hit_row - 4;                   /* 头部 3 行 + 第 4 行起为条目 */
+        if (idx >= 0 && idx < a->imp_n) {
+            a->imp_checked[idx] = !a->imp_checked[idx];
+            gen_import(a);
+            a->laid = 0;
+            set_bar(a);
+        }
+        return;
+    }
+    case ACT_IMP_DO: {
         const char *dir = pal_import_dir();
-        DIR *d = dir ? opendir(dir) : NULL;
-        int n = 0;
-        if (d) {
-            struct dirent *de;
-            while ((de = readdir(d)) != NULL) {
-                char full[900];
-                size_t l = strlen(de->d_name);
-                if (l < 4 || strcasecmp(de->d_name + l - 4, ".txt") != 0) continue;
-                snprintf(full, sizeof full, "%s/%s", dir, de->d_name);
-                if (rf_book_import(a->st, full, NULL, 0) == 0) n++;
-            }
-            closedir(d);
+        char fallback[600], full[900];
+        int i, ok = 0;
+        if (!dir || !*dir) { snprintf(fallback, sizeof fallback, "%s/import", pal_app_data_dir()); dir = fallback; }
+        for (i = 0; i < a->imp_n; i++) {
+            if (!a->imp_checked[i]) continue;
+            snprintf(full, sizeof full, "%s/%s", dir, a->imp_name[i]);
+            if (rf_book_import(a->st, full, NULL, 0) == 0) ok++;
         }
         a->nbooks = rf_books_scan(a->st, a->books, RF_MAX_BOOKS);
-        snprintf(a->st->status, sizeof a->st->status, n > 0 ? "已导入 %d 本" : "导入目录里没有 .txt", n);
-        gen_library(a);
-        a->laid = 0;                                 /* 内容变了：作废排版 */
-        {   /* 通用导入：不依赖平台文件选择器，只扫固定目录 */
-            const char *dir = pal_import_dir();
-            char fallback[600];
-            if (!dir || !*dir) {                       /* 平台没给目录就退到应用数据目录下 */
-                snprintf(fallback, sizeof fallback, "%s/import", pal_app_data_dir());
-                dir = fallback;
-            }
-            if (n > 0)
-                snprintf(a->dlg, sizeof a->dlg, "已导入 %d 本。\n导入目录：\n%s", n, dir);
-            else
-                snprintf(a->dlg, sizeof a->dlg,
-                         "导入目录里没有 .txt。\n把 txt 放进下面目录后\n再点 [导入]：\n%s", dir);
-            a->dlg_kind = 0;
-            a->dlg_action = -1;
-            a->dlg_active = 1;
-            stack_push(a, RF_BOOK_DIALOG);
-        }
+        snprintf(a->dlg, sizeof a->dlg,
+                 ok > 0 ? "已导入 %d 本。" : "没有可导入的文件（请勾选或用 [选择]）。", ok);
+        a->dlg_kind = 0;
+        a->dlg_action = -1;
+        a->dlg_active = 1;
+        while (a->sp > 1 && a->stack[a->sp - 1] == RF_BOOK_IMPORT) stack_pop(a);   /* 直接编辑栈：退回书库 */
+        stack_push(a, RF_BOOK_DIALOG);
         return;
     }
     case ACT_FONT_DN: if (s->font_dp > RF_FONT_DP_MIN) s->font_dp--; goto regrid;
@@ -1076,6 +1144,7 @@ RfApp *rf_app_create(RfStore *st, int screen_w, int screen_h, int density)
     a->dlg_action = -1;
     snprintf(a->st->status, sizeof a->st->status, "就绪");
     stack_reset(a, RF_BOOK_LIBRARY);        /* 栈底 = 书库 */
+    g_app_ref = a;
     return a;
 }
 
@@ -1099,6 +1168,7 @@ void rf_app_resize(RfApp *a, int screen_w, int screen_h, int density)
 void rf_app_destroy(RfApp *a)
 {
     if (!a) return;
+    if (g_app_ref == a) g_app_ref = NULL;
     if (a->book == RF_BOOK_READER && a->id[0])
         rf_progress_save(a->st, a->id, a->line, a->off, a->data_len);
     if (a->data && a->data != (const u8 *)a->gen) free((void *)a->data);
@@ -1124,6 +1194,22 @@ void rf_app_metrics(const RfApp *a, int *sw, int *sh, int *wc, int *rh,
 int rf_app_comp_dups(const RfApp *a) { return a->comp_dup; }
 
 const char *rf_app_dialog_text(const RfApp *a) { return a->dlg; }
+
+/* 平台选择器完成（已把文件拷进导入目录）：刷新导入页面 */
+void rf_app_on_files_picked(int n)
+{
+    RfApp *a = g_app_ref;
+    if (!a) return;
+    scan_import_dir(a);
+    snprintf(a->st->status, sizeof a->st->status, n > 0 ? "已选择 %d 个文件" : "未选择文件", n);
+    if (a->book == RF_BOOK_IMPORT) {
+        gen_import(a);
+        a->laid = 0;
+        set_bar(a);
+    }
+}
+
+
 
 int rf_app_body_hit(const RfApp *a, int i, int *x, int *y)
 {
