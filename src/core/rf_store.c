@@ -140,12 +140,12 @@ int rf_settings_load(RfStore *st)
     while (li_next(&it, &s, &n)) {
         line++;
         if (line == 1) {
-            if (n != 8 || memcmp(s, "RFSET001", 8) != 0) { free(b); return 1; }
+            if (n != 8 || memcmp(s, "RFSET002", 8) != 0) { free(b); return 1; }
         } else if (line >= 2 && line <= 8) {
             if (hex_get(s, n, 4, &v) < 0) { free(b); return 1; }
             switch (line) {
             case 2: st->settings.font_dp = (int)v; break;
-            case 3: st->settings.spacing_permille = (int)v; break;
+            case 3: st->settings.line_pitch_dp = (int)v; break;
             case 4: st->settings.line_height_dp = (int)v; break;
             case 5: st->settings.m_top_dp = (int)v; break;
             case 6: st->settings.m_bot_dp = (int)v; break;
@@ -160,10 +160,10 @@ int rf_settings_load(RfStore *st)
     /* 范围钳制 */
     if (st->settings.font_dp < RF_FONT_DP_MIN || st->settings.font_dp > RF_FONT_DP_MAX)
         st->settings.font_dp = RF_FONT_DP_DEFAULT;
-    if (st->settings.spacing_permille < RF_SPACING_MIN || st->settings.spacing_permille > RF_SPACING_MAX)
-        st->settings.spacing_permille = RF_SPACING_DEFAULT;
+    if (st->settings.line_pitch_dp < 0 || st->settings.line_pitch_dp > RF_PITCH_DP_MAX)
+        st->settings.line_pitch_dp = 0;
     if (st->settings.line_height_dp < 0 || st->settings.line_height_dp > RF_LINEHT_DP_MAX)
-        st->settings.line_height_dp = RF_LINEHT_DP_DEFAULT;
+        st->settings.line_height_dp = 0;
     return 0;
 }
 
@@ -171,9 +171,9 @@ int rf_settings_save(RfStore *st)
 {
     char buf[256], p[700];
     size_t off = 0;
-    off = put_str(buf, off, "RFSET001");
+    off = put_str(buf, off, "RFSET002");
     off = put_hex(buf, off, (u64)st->settings.font_dp, 4);
-    off = put_hex(buf, off, (u64)st->settings.spacing_permille, 4);
+    off = put_hex(buf, off, (u64)st->settings.line_pitch_dp, 4);
     off = put_hex(buf, off, (u64)st->settings.line_height_dp, 4);
     off = put_hex(buf, off, (u64)st->settings.m_top_dp, 4);
     off = put_hex(buf, off, (u64)st->settings.m_bot_dp, 4);

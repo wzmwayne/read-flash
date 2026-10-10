@@ -4,7 +4,7 @@
 void rf_settings_default(RfSettings *s)
 {
     s->font_dp = RF_FONT_DP_DEFAULT;
-    s->spacing_permille = RF_SPACING_DEFAULT;
+    s->line_pitch_dp = 0;                 /* 自动：字号 × 1.2 */
     s->line_height_dp = RF_LINEHT_DP_DEFAULT;
     s->m_top_dp = s->m_bot_dp = s->m_left_dp = s->m_right_dp = RF_MARGIN_DP_DEFAULT;
 }
@@ -36,16 +36,13 @@ void rf_grid_build(RfGrid *g, const RfSettings *s,
     g->wc = (g->fp + 1) / 2;
     if (g->wc < 1) g->wc = 1;
 
-    /* 基础行高 = max(ceil(fp × 行距‰ / 1000), ceil(行高下限 dp × 密度)) */
-    {
-        int sp = s->spacing_permille;
-        int lh;
-        if (sp < RF_SPACING_MIN) sp = RF_SPACING_MIN;
-        g->rh = (g->fp * sp + 999) / 1000;
-        lh = dp2px(s->line_height_dp, density);
-        if (lh > g->rh) g->rh = lh;
-        if (g->rh < 1) g->rh = 1;
-    }
+    /* 行距 = 相邻两行起点的距离（0 = 自动 = 字号 × 1.2）
+     * 行高 = 单行绘制盒高度（0 = 自动 = 字号） */
+    g->rh = (s->line_pitch_dp > 0) ? dp2px(s->line_pitch_dp, density)
+                                   : (g->fp * 1200 + 999) / 1000;
+    g->bh = (s->line_height_dp > 0) ? dp2px(s->line_height_dp, density) : g->fp;
+    if (g->rh < 1) g->rh = 1;
+    if (g->bh < 1) g->bh = 1;
 
     /* 四向边距（像素） */
     g->m_top   = dp2px(s->m_top_dp,   density);
@@ -59,16 +56,16 @@ void rf_grid_build(RfGrid *g, const RfSettings *s,
     g->cols = avail_w / g->wc;
     if (g->cols < 1) { g->cols = 1; g->overflow = 1; }
 
-    /* 行数 V：屏高 − 顶栏 1 行 − 底栏 2 行 − 上下边距 */
-    avail_h = screen_h - 3 * g->rh - g->m_top - g->m_bot;
+    /* 纵向：上下边距之内按"行距"排槽位 —— 顶栏 1 + 正文 V + 底栏 2 */
+    avail_h = screen_h - g->m_top - g->m_bot;
     if (avail_h < 0) avail_h = 0;
-    g->rows = avail_h / g->rh;
+    g->rows = avail_h / g->rh - 3;
     if (g->rows < 1) { g->rows = 1; g->overflow = 1; }
 
     /* 自动边距：余数全部给右/下（只增不减，A12） */
     extra = (screen_w - g->m_left - g->m_right) - g->cols * g->wc;
     if (extra > 0) g->m_right += extra;
-    extra = (screen_h - 3 * g->rh - g->m_top - g->m_bot) - g->rows * g->rh;
+    extra = (screen_h - g->m_top - g->m_bot) - (g->rows + 3) * g->rh;
     if (extra > 0) g->m_bot += extra;
 
     /* 区域矩形：上下左右边距作用于**整个绘制面**（顶栏/正文/底栏都在边距之内） */

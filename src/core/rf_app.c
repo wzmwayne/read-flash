@@ -225,23 +225,21 @@ static void gen_settings(RfApp *a)
         gbtn(a, ACT_FONT_UP, "+");
         gputs(a, "      （dp，12 - 48）\n\n");
 
-        gputs(a, "行距\n");
+        gputs(a, "行距（两行之间的距离）\n");
         gbtn(a, ACT_SP_DN, "-");
         gputs(a, " ");
-        gnum(a, (unsigned long long)s->spacing_permille / 1000);
-        gputs(a, ".");
-        gnum(a, (unsigned long long)(s->spacing_permille % 1000) / 100);
+        gnum(a, (unsigned long long)s->line_pitch_dp);
         gputs(a, " ");
         gbtn(a, ACT_SP_UP, "+");
-        gputs(a, "      （1.0 - 3.0）\n\n");
+        gputs(a, "   （dp，0 = 自动）\n\n");
 
-        gputs(a, "行高\n");
+        gputs(a, "行高（单行盒高度）\n");
         gbtn(a, ACT_LH_DN, "-");
         gputs(a, " ");
         gnum(a, (unsigned long long)s->line_height_dp);
         gputs(a, " ");
         gbtn(a, ACT_LH_UP, "+");
-        gputs(a, "      （dp，0 = 只用行距）\n\n");
+        gputs(a, "   （dp，0 = 自动）\n\n");
 
         gputs(a, "左右边距\n");
         gbtn(a, ACT_ML_DN, "-");
@@ -276,23 +274,26 @@ static void gen_debug(RfApp *a)
     gnum(a, a->line);
     gputs(a, "\n行内偏移   ");
     gnum(a, a->off);
-    gputs(a, "\n索引条目   ");
+    gputs(a, "\n行距       ");
+    gnum(a, (unsigned long long)a->st->settings.line_pitch_dp);
+    gputs(a, " dp（0=自动，实际 ");
+    gnum(a, (unsigned long long)a->g.rh);
+    gputs(a, " px）\n行高       ");
+    gnum(a, (unsigned long long)a->st->settings.line_height_dp);
+    gputs(a, " dp（0=自动，实际 ");
+    gnum(a, (unsigned long long)a->g.bh);
+    gputs(a, " px）\n索引条目   ");
     gnum(a, a->ix.N);
     gputs(a, "\n索引间隔 K ");
     gnum(a, a->ix.K);
-    gputs(a, "\n字号/行距  ");
+    gputs(a, "\n字号       ");
     gnum(a, (unsigned long long)a->st->settings.font_dp);
-    gputs(a, " dp / ");
-    gnum(a, (unsigned long long)a->st->settings.spacing_permille / 1000);
-    gputs(a, ".");
-    gnum(a, (unsigned long long)(a->st->settings.spacing_permille % 1000) / 100);
+    gputs(a, " dp");
     gputs(a, "\n网格       ");
     gnum(a, (unsigned long long)a->g.cols);
     gputs(a, " 列 x ");
     gnum(a, (unsigned long long)a->g.rows);
-    gputs(a, " 行\n行高下限   ");
-    gnum(a, (unsigned long long)a->st->settings.line_height_dp);
-    gputs(a, " dp\n版本       " RF_VERSION "\n");
+    gputs(a, " 行\n版本       " RF_VERSION "\n");
     a->data = (const u8 *)a->gen;
     a->data_len = a->gen_len;
 }
@@ -510,7 +511,7 @@ static void blend(u16 *fb, int fw, int fh, const u8 *alpha, int gw, int gh, int 
 /* 画一行文本；unit = 每个半角列的像素宽 = wc * num / den；px = 字号像素 */
 static int draw_text(RfApp *a, u16 *fb, int fw, int fh, const u8 *s, u64 n,
                      int x0, int y, int px, int unit_num, int unit_den,
-                     u16 base, int max_cols, int has_marker)
+                     u16 base, int max_cols, int has_marker, int boxh)
 {
     u64 i = 0;
     int col = 0, marker = 0;
@@ -538,7 +539,7 @@ static int draw_text(RfApp *a, u16 *fb, int fw, int fh, const u8 *s, u64 n,
             if (rf_glyph_get(cp, px, &alpha, &gw, &gh)) {
                 int cellw = cc * a->g.wc * unit_num / unit_den;
                 cx = x0 + col * a->g.wc * unit_num / unit_den + (cellw - gw) / 2;
-                cy = y + (a->g.rh - gh) / 2;
+                cy = y + (boxh - gh) / 2;
                 blend(fb, fw, fh, alpha, gw, gh, cx, cy, color);
             }
         }
@@ -558,17 +559,17 @@ int rf_app_render(RfApp *a, u16 *fb, int fw, int fh)
 
     /* 顶栏：< + 标题（阅读书右侧显示进度） */
     draw_text(a, fb, fw, fh, (const u8 *)"<", 1,
-              a->g.top_bar.x, a->g.top_bar.y, a->g.fp, 1, 1, C_TITLE, 4, 0);
+              a->g.top_bar.x, a->g.top_bar.y, a->g.fp, 1, 1, C_TITLE, 4, 0, a->g.bh);
     draw_text(a, fb, fw, fh, (const u8 *)a->title, strlen(a->title),
               a->g.top_bar.x + 2 * a->g.wc, a->g.top_bar.y, a->g.fp, 1, 1,
-              C_TITLE, a->g.cols - 6, 0);
+              C_TITLE, a->g.cols - 6, 0, a->g.bh);
     if (a->book == RF_BOOK_READER && a->data_len > 0) {
         char pb[16];
         unsigned long long pct = a->off * 100ull / a->data_len;
         snprintf(pb, sizeof pb, "%llu%%", pct);
         draw_text(a, fb, fw, fh, (const u8 *)pb, strlen(pb),
                   a->g.top_bar.x + a->g.top_bar.w - (int)strlen(pb) * a->g.wc - a->g.wc,
-                  a->g.top_bar.y, a->g.fp, 1, 1, C_DIM, 6, 0);
+                  a->g.top_bar.y, a->g.fp, 1, 1, C_DIM, 6, 0, a->g.bh);
     }
     fill(fb, fw, fh, a->g.top_bar.x, a->g.top_bar.y + a->g.rh - 1, a->g.top_bar.w, 1, C_SEP);
 
@@ -577,19 +578,21 @@ int rf_app_render(RfApp *a, u16 *fb, int fw, int fh)
         for (i = 0; i < a->g.rows; i++) {
             RfRow *r = &a->rows[i];
             int y = a->g.body.y + i * a->g.rh;
-            int num = 1, den = 1, px = a->g.fp;
+            int num = 1, den = 1, px = a->g.fp, boxh = a->g.bh, boxy = y;
             u16 base = C_TEXT;
             if (r->kind == RF_ROW_BLANK) continue;
             if (r->kind == RF_ROW_TITLE1) { num = 2; den = 1; px = a->g.fp * 2; base = C_TITLE; }
             else if (r->kind == RF_ROW_TITLE2) { num = 3; den = 2; px = a->g.fp * 3 / 2; base = C_TITLE; }
             else if (r->kind == RF_ROW_TITLE3) { base = C_TITLE; }
-            if (i > 0 && a->rows[i - 1].kind != r->kind &&
-                (r->kind == RF_ROW_TITLE1 || r->kind == RF_ROW_TITLE2)) {
-                /* 标题块首行：贴顶绘制（下方留白由第二行承担） */
+            if (r->kind == RF_ROW_TITLE1 || r->kind == RF_ROW_TITLE2) {
+                boxy = y;                        /* 标题块贴顶，占两个行距槽位 */
+                boxh = 2 * a->g.rh;
+            } else if (a->g.rh > a->g.bh) {
+                boxy = y + (a->g.rh - a->g.bh) / 2;   /* 行高 < 行距：盒在槽内居中 */
             }
             draw_text(a, fb, fw, fh, a->data + r->start_off, r->end_off - r->start_off,
-                      a->g.body.x, y, px, num, den, base, a->g.cols,
-                      a->book == RF_BOOK_LIBRARY ? 1 : 0);
+                      a->g.body.x, boxy, px, num, den, base, a->g.cols,
+                      a->book == RF_BOOK_LIBRARY ? 1 : 0, boxh);
         }
     }
 
@@ -598,7 +601,7 @@ int rf_app_render(RfApp *a, u16 *fb, int fw, int fh)
     if (a->bar[0])
         draw_text(a, fb, fw, fh, (const u8 *)a->bar, strlen(a->bar),
                   a->g.btn_bar.x + a->g.wc, a->g.btn_bar.y, a->g.fp, 1, 1,
-                  C_BTN, a->g.cols, 0);
+                  C_BTN, a->g.cols, 0, a->g.bh);
     /* 底栏下行：翻页行（左 <，右 >） */
     fill(fb, fw, fh, a->g.pager_bar.x, a->g.pager_bar.y, a->g.pager_bar.w, 1, C_SEP);
     {
@@ -607,9 +610,9 @@ int rf_app_render(RfApp *a, u16 *fb, int fw, int fh)
         const u8 *lt = (const u8 *)"<";
         const u8 *gt = (const u8 *)">";
         draw_text(a, fb, fw, fh, lt, 1, a->g.pager_bar.x, a->g.pager_bar.y,
-                  a->g.fp, 1, 1, cprev, 4, 0);
+                  a->g.fp, 1, 1, cprev, 4, 0, a->g.bh);
         draw_text(a, fb, fw, fh, gt, 1, a->g.pager_bar.x + a->g.pager_bar.w - a->g.wc,
-                  a->g.pager_bar.y, a->g.fp, 1, 1, cnext, 4, 0);
+                  a->g.pager_bar.y, a->g.fp, 1, 1, cnext, 4, 0, a->g.bh);
     }
     return 1;
 }
@@ -676,8 +679,8 @@ static void do_action(RfApp *a, int act)
     }
     case ACT_FONT_DN: if (s->font_dp > RF_FONT_DP_MIN) s->font_dp--; goto regrid;
     case ACT_FONT_UP: if (s->font_dp < RF_FONT_DP_MAX) s->font_dp++; goto regrid;
-    case ACT_SP_DN:   if (s->spacing_permille > RF_SPACING_MIN) s->spacing_permille -= 50; goto regrid;
-    case ACT_SP_UP:   if (s->spacing_permille < RF_SPACING_MAX) s->spacing_permille += 50; goto regrid;
+    case ACT_SP_DN:   if (s->line_pitch_dp > 0) s->line_pitch_dp -= 2; goto regrid;
+    case ACT_SP_UP:   if (s->line_pitch_dp < RF_PITCH_DP_MAX) s->line_pitch_dp += 2; goto regrid;
     case ACT_LH_DN:   if (s->line_height_dp > 0) s->line_height_dp -= 2; goto regrid;
     case ACT_LH_UP:   if (s->line_height_dp < RF_LINEHT_DP_MAX) s->line_height_dp += 2; goto regrid;
     case ACT_ML_DN:   if (s->m_left_dp > 0) { s->m_left_dp -= 2; s->m_right_dp = s->m_left_dp; } goto regrid;

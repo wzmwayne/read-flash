@@ -27,18 +27,16 @@ typedef int64_t  i64;
 #define RF_FONT_DP_MIN       12
 #define RF_FONT_DP_MAX       48
 #define RF_FONT_DP_DEFAULT   16
-#define RF_SPACING_MIN       1000   /* ‰，1.0x */
-#define RF_SPACING_MAX       3000
-#define RF_SPACING_DEFAULT   1200
+#define RF_PITCH_DP_MAX      96     /* 行距上限（dp） */
+#define RF_LINEHT_DP_MAX     96     /* 行高上限（dp） */
 #define RF_MARGIN_DP_MAX     64
 #define RF_MARGIN_DP_DEFAULT 8
-#define RF_LINEHT_DP_MAX     64
-#define RF_LINEHT_DP_DEFAULT 0      /* 0 = 只用行距 */
+#define RF_LINEHT_DP_DEFAULT 0      /* 0 = 自动 = 字号 */
 
 typedef struct {
     int font_dp;            /* 字号，dp，整数 */
-    int spacing_permille;   /* 行距，‰（1200 = 1.2），决定行高 = 字号 × 行距 */
-    int line_height_dp;     /* 行高下限（dp，0 = 关闭）；实际行高取其与行距结果的较大者 */
+    int line_pitch_dp;      /* 行距：相邻两行**起点之间的距离**（dp）；0 = 自动（字号 × 1.2） */
+    int line_height_dp;     /* 行高：**单行的绘制盒高度**（dp）；0 = 自动（= 字号） */
     int m_top_dp, m_bot_dp, m_left_dp, m_right_dp;
 } RfSettings;
 
@@ -52,7 +50,8 @@ typedef struct {
     int density;            /* ‰，1000 = 1.0x */
     int fp;                 /* 字号像素 */
     int wc;                 /* 半角列宽（全角 = 2 × wc） */
-    int rh;                 /* 基础行高 */
+    int rh;                 /* 行距：相邻渲染行的起点间距（排版推进量） */
+    int bh;                 /* 行高：单行绘制盒高度（字形在盒内垂直居中，超出裁剪） */
     int m_top, m_bot, m_left, m_right;  /* 自动补齐后的边距（只增不减） */
     int cols;               /* C */
     int rows;               /* V */
