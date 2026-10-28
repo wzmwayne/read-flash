@@ -2,275 +2,84 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Read-Flash 转换器（TXT / EPUB → RFBOOK）</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>站点已关闭</title>
 <style>
   :root { color-scheme: dark; }
-  body { margin:0; padding:16px; background:#111; color:#ddd;
-         font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans CJK SC",sans-serif; }
-  h1 { font-size:18px; margin:0 0 4px; }
-  p.sub { color:#888; margin:0 0 16px; }
-  .box { border:1px solid #333; border-radius:8px; padding:12px; margin-bottom:12px; }
-  #drop { border:2px dashed #444; border-radius:10px; padding:28px; text-align:center; color:#888; }
-  #drop.hot { border-color:#6c6; color:#8d8; }
-  label { display:inline-block; margin:4px 12px 4px 0; color:#aaa; }
-  input[type=text] { background:#1b1b1b; border:1px solid #333; color:#ddd; border-radius:4px; padding:4px 6px; width:320px; }
-  button { background:#2a2a2a; border:1px solid #444; color:#ddd; border-radius:6px; padding:6px 14px; cursor:pointer; }
-  button:hover { background:#333; }
-  button.primary { background:#1d4; color:#061; border-color:#1d4; font-weight:600; }
-  textarea { width:100%; height:260px; background:#0d0d0d; color:#cfc; border:1px solid #333;
-             border-radius:6px; padding:8px; font:12px/1.5 ui-monospace,Menlo,Consolas,monospace; }
-  #log { color:#9c9; white-space:pre-wrap; font:12px/1.6 ui-monospace,monospace; max-height:160px; overflow:auto; }
-  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0;
+    background: #101013; color: #e8e8ea;
+    font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans SC", sans-serif;
+    line-height: 1.75;
+  }
+  main { max-width: 820px; margin: 0 auto; padding: 0 20px 96px; }
+  h1 { font-size: clamp(26px, 4vw, 40px); margin: 0 0 8px; letter-spacing: .5px; }
+  .lead { color: #9aa0a6; margin: 0 0 32px; }
+  h2 { font-size: clamp(19px, 2.4vw, 24px); margin: 40px 0 12px; padding-left: 12px;
+        border-left: 5px solid #b3001b; }
+  p, li { font-size: clamp(15px, 1.7vw, 17px); }
+  ul { padding-left: 1.2em; }
+  li { margin: .35em 0; }
+  .card { background: #191a1f; border: 1px solid #2a2c33; border-radius: 14px;
+           padding: 22px 24px; margin: 18px 0; }
+  .muted { color: #8b9098; font-size: 14px; }
+  a { color: #ff6b6b; }
+  code { background: #22242b; padding: .12em .4em; border-radius: 6px; font-size: .92em; }
 </style>
 </head>
 <body>
-<h1>Read-Flash 转换器</h1>
-<p class="sub">把 TXT / EPUB2 / EPUB3 转成 Read-Flash 可导入的纯文本（<code>#</code> 标题 + <code>---</code> 换页符）。全部在浏览器本地完成，不上传任何文件。</p>
+<div id="kab" role="alert">
+  <a href="https://keepandroidopen.org" target="_blank" rel="noopener">
+    Keep Android Open — 安卓必须保持开放
+  </a>
+  <div class="kab-sub">签名、安装与分发自由正在被侵蚀，请关注并参与：keepandroidopen.org</div>
+</div>
+<style>
+  /* 不可关闭、大号、置顶横幅 */
+  #kab {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 2147483647;
+    background: #b3001b; color: #fff;
+    padding: 18px 16px 16px;
+    text-align: center;
+    box-shadow: 0 6px 24px rgba(0,0,0,.45);
+    font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans SC", sans-serif;
+    border-bottom: 4px solid #ffd400;
+  }
+  #kab a {
+    color: #fff; text-decoration: none;
+    font-size: clamp(24px, 4.2vw, 46px); font-weight: 900;
+    letter-spacing: .5px; line-height: 1.15;
+  }
+  #kab a:hover { text-decoration: underline; }
+  #kab .kab-sub { margin-top: 8px; font-size: clamp(13px, 1.5vw, 18px); opacity: .95; }
+  @media (max-width: 640px) { #kab { padding: 14px 10px 12px; } }
+</style>
 
-<div class="box">
-  <div id="drop">把 <b>.txt</b> 或 <b>.epub</b> 拖到这里，或
-    <button id="pick">选择文件</button>
-    <input id="file" type="file" accept=".txt,.epub,text/plain,application/epub+zip" hidden>
-  </div>
-  <div class="row" style="margin-top:12px">
-    <label>章节正则：<input id="re" type="text" value="^(第[一二三四五六七八九十百千零〇0-9]+[章节回卷篇]|Chapter\s+\d+|CHAPTER\s+\d+|[0-9]{1,4}[、.．])\s*.{0,40}$"></label>
-    <label><input id="dedup" type="checkbox" checked> 标题去重（同名章节只留第一次）</label>
-    <label><input id="breakb" type="checkbox" checked> 章节前加换页符 ---</label>
-    <label><input id="h2" type="checkbox" checked> 章节标题前加 ##</label>
-  </div>
+<main style="padding-top: 200px;">
+
+<h1>因学业原因，项目暂停更新</h1>
+<p class="lead">本人因学业原因，暂时放缓各项目更新，学业告一段落后继续。</p>
+
+<div class="card">
+  <h2 style="margin-top:0">公告</h2>
+  <p>因学业原因，账号下的仓库目前设为<strong>归档（只读）</strong>，本站不再提供任何下载、导航或资源链接，历史页面内容已移除。</p>
+  <p>仓库内容按「放弃所有权利」（Unlicense / 公有领域）发布，可自由取用、修改与再分发；暂停期间暂不提供支持与更新。</p>
 </div>
 
-<div class="box">
-  <div class="row">
-    <button class="primary" id="dl" disabled>下载 .txt</button>
-    <span id="stat" style="color:#888"></span>
-  </div>
-</div>
+<h2>为什么关注 keepandroidopen.org</h2>
+<p>安卓生态正在从「开放安装」走向「受控分发」：侧载限制、开发者验证、平台签名垄断，会直接压缩个人开发者与普通用户的空间。这不是某一个应用的问题，而是整个平台的走向。</p>
+<p>请访问 <a href="https://keepandroidopen.org" target="_blank" rel="noopener">keepandroidopen.org</a> 了解进展与参与方式。</p>
 
-<div class="box">
-  <div id="log">等待文件…</div>
-</div>
+<h2>本站现状</h2>
+<ul>
+  <li>下载链接、导航分组、旧版页面：<strong>已全部移除</strong>；</li>
+  <li>代码与文档：保留在 GitHub 仓库中（已归档，只读）；</li>
+  <li>许可：放弃所有权利，公有领域；</li>
+  <li>暂停期间暂不处理功能请求、问题反馈与合并请求，恢复后照常。</li>
+</ul>
+<p class="muted">暂停期间页面不再更新。</p>
 
-<div class="box">
-  <textarea id="out" placeholder="转换结果预览（前 20000 字）"></textarea>
-</div>
-
-<script>
-"use strict";
-const $ = (id) => document.getElementById(id);
-const log = (s) => { $("log").textContent += s + "\n"; $("log").scrollTop = 1e9; };
-let result = "", baseName = "book";
-
-/* ---------- 工具 ---------- */
-const dec = new TextDecoder("utf-8");
-function decodeBytes(buf) {                       // 尽量识别 UTF-8 / GBK
-  let t = new TextDecoder("utf-8", { fatal: false }).decode(buf);
-  if (t.includes("\uFFFD")) {
-    try { t = new TextDecoder("gbk").decode(buf); } catch (e) { /* 浏览器不支持就算了 */ }
-  }
-  return t.replace(/\r\n?/g, "\n");
-}
-const unesc = (s) => s.replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-                        .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&")
-                        .replace(/&#(\d+);/g, (m, d) => String.fromCodePoint(+d))
-                        .replace(/&#x([0-9a-f]+);/gi, (m, h) => String.fromCodePoint(parseInt(h, 16)));
-
-/* ---------- TXT：筛章节 → 加 ## 与 --- ---------- */
-function convertTxt(text) {
-  const lines = text.split("\n");
-  const re = new RegExp($("re").value.trim() || "^$");
-  const dedup = $("dedup").checked, brk = $("breakb").checked, h2 = $("h2").checked;
-  const seen = new Set();
-  const out = [];
-  let hits = 0, dup = 0;
-  for (let raw of lines) {
-    const line = raw.replace(/\s+$/, "");
-    const t = line.trim();
-    if (t && t.length <= 60 && re.test(t)) {
-      const key = t.replace(/\s+/g, "");
-      if (dedup && seen.has(key)) { dup++; continue; }
-      seen.add(key); hits++;
-      if (out.length && out[out.length - 1] !== "") out.push("");
-      if (brk) { out.push("---"); out.push(""); }
-      out.push((h2 ? "## " : "") + t);
-      out.push("");
-      continue;
-    }
-    out.push(line);
-  }
-  log(`TXT：识别章节 ${hits} 个，去重丢弃 ${dup} 行`);
-  return out.join("\n").replace(/\n{4,}/g, "\n\n\n").trim() + "\n";
-}
-
-/* ---------- ZIP 读取（EPUB 就是 ZIP） ---------- */
-async function unzip(buf) {
-  const dv = new DataView(buf), u8 = new Uint8Array(buf);
-  const files = new Map();
-  // 从尾部找 EOCD
-  let eocd = -1;
-  for (let i = u8.length - 22; i >= 0 && i > u8.length - 66000; i--)
-    if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
-  if (eocd < 0) throw new Error("不是有效的 ZIP/EPUB（找不到 EOCD）");
-  const count = dv.getUint16(eocd + 10, true);
-  let p = dv.getUint32(eocd + 16, true);
-  for (let n = 0; n < count; n++) {
-    if (dv.getUint32(p, true) !== 0x02014b50) break;
-    const method = dv.getUint16(p + 10, true);
-    const csize = dv.getUint32(p + 20, true);
-    const nameLen = dv.getUint16(p + 28, true);
-    const extraLen = dv.getUint16(p + 30, true);
-    const cmtLen = dv.getUint16(p + 32, true);
-    const lho = dv.getUint32(p + 42, true);
-    const name = dec.decode(u8.subarray(p + 46, p + 46 + nameLen));
-    const lnameLen = dv.getUint16(lho + 26, true), lextraLen = dv.getUint16(lho + 28, true);
-    const start = lho + 30 + lnameLen + lextraLen;
-    const data = u8.subarray(start, start + csize);
-    if (method === 0) files.set(name, data);
-    else if (method === 8) files.set(name, await inflateRaw(data));
-    p += 46 + nameLen + extraLen + cmtLen;
-  }
-  return files;
-}
-
-async function inflateRaw(data) {
-  if (typeof DecompressionStream === "undefined")
-    throw new Error("此浏览器不支持 DecompressionStream，请用较新的 Chrome / Edge / Safari 16.4+");
-  const ds = new DecompressionStream("deflate-raw");
-  const stream = new Blob([data]).stream().pipeThrough(ds);
-  return new Uint8Array(await new Response(stream).arrayBuffer());
-}
-
-/* ---------- EPUB：按 spine 顺序抽正文，每章加 ## 与换页符 ---------- */
-async function convertEpub(buf) {
-  const files = await unzip(buf);
-  const get = (n) => files.get(n) || files.get(decodeURIComponent(n)) || files.get(n.replace(/^\.\//, ""));
-  const txtOf = (n) => { const b = get(n); return b ? dec.decode(b) : null; };
-
-  const container = txtOf("META-INF/container.xml");
-  if (!container) throw new Error("EPUB 缺少 META-INF/container.xml");
-  const opfPath = (container.match(/full-path="([^"]+)"/) || [])[1];
-  if (!opfPath) throw new Error("EPUB 的 container.xml 里没有 full-path");
-  const opf = txtOf(opfPath);
-  if (!opf) throw new Error("读不到 OPF：" + opfPath);
-  const dir = opfPath.includes("/") ? opfPath.replace(/[^/]+$/, "") : "";
-
-  // manifest: id → href
-  const man = {};
-  for (const m of opf.matchAll(/<item\b[^>]*>/gi)) {
-    const tag = m[0];
-    const id = (tag.match(/\bid="([^"]+)"/) || [])[1];
-    const href = (tag.match(/\bhref="([^"]+)"/) || [])[1];
-    if (id && href) man[id] = href;
-  }
-  // spine 顺序
-  const spine = [...opf.matchAll(/<itemref\b[^>]*idref="([^"]+)"/gi)].map((m) => m[1]);
-  if (!spine.length) throw new Error("OPF 里没有 spine");
-
-  // 目录标题（nav.xhtml 或 toc.ncx），用于取章节名
-  const titles = {};
-  for (const [name, bytes] of files) {
-    const s = dec.decode(bytes);
-    if (/\.ncx$/i.test(name) || /nav\.xhtml?$/i.test(name) || /toc\.xhtml?$/i.test(name)) {
-      for (const a of s.matchAll(/<a\b[^>]*href="([^"#]+)[^"]*"[^>]*>([\s\S]*?)<\/a>/gi))
-        titles[a[1]] = unesc(a[2].replace(/<[^>]+>/g, "")).trim();
-      for (const a of s.matchAll(/<navPoint\b[\s\S]*?<text>([\s\S]*?)<\/text>[\s\S]*?src="([^"#]+)/gi))
-        titles[a[2]] = unesc(a[1]).trim();
-    }
-  }
-
-  const brk = $("breakb").checked, h2 = $("h2").checked;
-  const seen = new Set();
-  const out = [];
-  let chapters = 0, dup = 0;
-  for (const idref of spine) {
-    const href = man[idref];
-    if (!href) continue;
-    const path = (dir + href).replace(/^\.\//, "");
-    const html = txtOf(path) || txtOf(href);
-    if (!html) continue;
-    // 取标题：TOC > <h1-3> > <title>
-    let title = titles[href] || titles[path] || "";
-    if (!title) title = unesc((html.match(/<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/i) || [])[1] || "")
-                          .replace(/<[^>]+>/g, "").trim();
-    if (!title) title = unesc((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || "").trim();
-    if (!title) title = "第 " + (chapters + 1) + " 节";
-    const key = title.replace(/\s+/g, "");
-    if ($("dedup").checked && seen.has(key)) { dup++; continue; }
-    seen.add(key);
-    // 正文：去脚本/样式/标签
-    let body = html.replace(/<script[\s\S]*?<\/script>/gi, "")
-                   .replace(/<style[\s\S]*?<\/style>/gi, "")
-                   .replace(/<head[\s\S]*?<\/head>/gi, "");
-    body = unesc(body.replace(/<(p|div|br|h[1-6]|\/p|\/div|\/h[1-6])[^>]*>/gi, "\n")
-                     .replace(/<[^>]+>/g, ""))
-               .split("\n").map((l) => l.replace(/\s+$/, "").replace(/^\s+/, ""))
-               .filter((l, i, arr) => l !== "" || (arr[i - 1] || "") !== "")
-               .join("\n").replace(/\n{3,}/g, "\n\n").trim();
-    /* 去重：正文开头与章节标题重复的行（EPUB 的 <h1> 与插入的 ## 标题重名）一律丢掉 */
-    {
-      const norm = (s) => s.replace(/^#{1,6}\s*/, "").replace(/[\s\u3000]+/g, "");
-      const tkey = norm(title);
-      const bl = body.split("\n");
-      let cut = 0;
-      while (cut < bl.length && cut < 8) {
-        const l = bl[cut];
-        if (l.trim() === "" || norm(l) === tkey) { cut++; continue; }
-        break;
-      }
-      body = bl.slice(cut).join("\n").replace(/^\n+/, "").trim() || "（本节无正文）";
-    }
-    if (out.length) out.push("");
-    if (brk) { out.push("---"); out.push(""); }
-    out.push((h2 ? "## " : "") + title);
-    out.push("");
-    out.push(body);
-    chapters++;
-  }
-  log(`EPUB：spine ${spine.length} 项 → 章节 ${chapters} 个，去重丢弃 ${dup} 个`);
-  return out.join("\n").replace(/\n{4,}/g, "\n\n\n").trim() + "\n";
-}
-
-/* ---------- 入口 ---------- */
-async function handle(file) {
-  $("log").textContent = "";
-  $("stat").textContent = "";
-  baseName = file.name.replace(/\.(txt|epub)$/i, "");
-  log(`文件：${file.name}（${(file.size / 1024).toFixed(1)} KB）`);
-  const buf = await file.arrayBuffer();
-  try {
-    result = /\.epub$/i.test(file.name) ? await convertEpub(buf)
-                                        : convertTxt(decodeBytes(buf));
-  } catch (e) {
-    log("失败：" + e.message);
-    return;
-  }
-  const lines = result.split("\n").length;
-  const chaps = (result.match(/^#{1,3}\s/gm) || []).length;
-  const breaks = (result.match(/^---$/gm) || []).length;
-  $("stat").textContent = `${lines} 行 · ${chaps} 个标题 · ${breaks} 个换页符 · ${(result.length / 1024).toFixed(0)} KB`;
-  $("out").value = result.slice(0, 20000);
-  $("dl").disabled = false;
-  log("完成。把下载的 .txt 放进 Read-Flash 的导入目录，或在导入页用 [选择] 挑它。");
-}
-
-$("pick").onclick = () => $("file").click();
-$("file").onchange = (e) => e.target.files[0] && handle(e.target.files[0]);
-const drop = $("drop");
-drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("hot"); };
-drop.ondragleave = () => drop.classList.remove("hot");
-drop.ondrop = (e) => {
-  e.preventDefault(); drop.classList.remove("hot");
-  if (e.dataTransfer.files[0]) handle(e.dataTransfer.files[0]);
-};
-$("dl").onclick = () => {
-  const blob = new Blob([result], { type: "text/plain;charset=utf-8" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = baseName + ".txt";
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-};
-</script>
+</main>
 </body>
 </html>
