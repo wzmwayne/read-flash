@@ -9,10 +9,12 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Typeface;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
+import android.widget.Toast;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -172,6 +174,11 @@ public class MainActivity extends Activity {
     static void pickFiles() {
         MainActivity a = inst;
         if (a == null) return;
+        if (Build.VERSION.SDK_INT < 19) {      /* Android 4.0~4.3 没有 SAF：只能用私有导入目录 */
+            Toast.makeText(a, "系统版本过低（<4.4），请把 txt 放进导入目录", Toast.LENGTH_LONG).show();
+            nativeOnPicked(0);
+            return;
+        }
         Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         i.addCategory(Intent.CATEGORY_OPENABLE);
         i.setType("text/plain");
@@ -243,7 +250,8 @@ public class MainActivity extends Activity {
         if (a == null) return;
         a.runOnUiThread(new Runnable() {
             public void run() {
-                a.finishAffinity();
+                if (Build.VERSION.SDK_INT >= 16) a.finishAffinity();
+                else a.finish();
             }
         });
     }

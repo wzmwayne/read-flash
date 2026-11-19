@@ -23,6 +23,8 @@ case "$TARGET" in
 esac
 
 API="${ANDROID_API:-21}"
+NDKAPI="$API"
+[ "$NDKAPI" -lt 19 ] && NDKAPI=19      # NDK 25 的 sysroot/包装器最低 API 19；manifest 仍按 API 写
 ABI="${ANDROID_ABI:-arm64-v8a}"
 case "$ABI" in
   arm64-v8a)   TRIPLE=aarch64-linux-android ;;
@@ -81,7 +83,7 @@ probe_ndk() {
     [ -d "$root/ndk" ] || continue
     for n in $(ls -d "$root"/ndk/*/ 2>/dev/null | sort -Vr); do
       for pre in linux-x86_64 linux-aarch64; do
-        c="${n}toolchains/llvm/prebuilt/${pre}/bin/${TRIPLE}${API}-clang"
+        c="${n}toolchains/llvm/prebuilt/${pre}/bin/${TRIPLE}${NDKAPI}-clang"
         if [ -x "$c" ] && "$c" --version >/dev/null 2>&1; then
           echo "${n%/}|$pre|$c"; return 0
         fi
@@ -99,7 +101,7 @@ ZIPALIGN="$(probe_tool zipalign -h || true)"   # 可选：本机无可用 zipali
 if [ -n "${ANDROID_PLATFORM:-}" ]; then PLATFORM="$ANDROID_PLATFORM"; else PLATFORM="$(probe_platform)" || { echo "找不到 android.jar" >&2; exit 1; }; fi
 if [ -n "${ANDROID_NDK:-}" ]; then
   NDK="$ANDROID_NDK"; PRE=linux-x86_64
-  CC="$NDK/toolchains/llvm/prebuilt/$PRE/bin/${TRIPLE}${API}-clang"
+  CC="$NDK/toolchains/llvm/prebuilt/$PRE/bin/${TRIPLE}${NDKAPI}-clang"
 else
   IFS='|' read -r NDK PRE CC <<< "$(probe_ndk)" || { echo "找不到可执行的 NDK clang" >&2; exit 1; }
 fi

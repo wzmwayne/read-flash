@@ -72,6 +72,22 @@ docs/            规范与评审文档
 脚本会逐工具探测（aapt2 / d8 / apksigner / zipalign / NDK clang），自动跳过宿主机无法执行的
 组件（例如 aarch64 主机上的 x86_64 预编译工具），全程**不下载任何东西**。
 
+## 安卓版本与构建变体
+
+| 目标设备 | 构建命令 | 产物 | minSdk |
+|---|---|---|---|
+| 现代机（推荐） | `./tools/build_android.sh app` | arm64-v8a | 21（Android 5.0） |
+| Android 4.0–4.4 | `ANDROID_API=14 ANDROID_ABI=armeabi-v7a ./tools/build_android.sh app` | armeabi-v7a | 14（Android 4.0） |
+| Android 2.3–3.x | `ANDROID_API=9 ANDROID_ABI=armeabi-v7a ./tools/build_android.sh app` | armeabi-v7a | 9（Android 2.3） |
+
+说明：
+
+- **C 侧统一按 NDK 19 编译**（NDK 25 的 sysroot 与 clang 包装器最低 API 19），manifest 仍按目标 minSdk 声明；
+  C 代码只用 `fopen/fread/readdir/mkdir/rename` 等早期 libc 符号，不依赖 19+ 新 API。
+- Java 侧按版本降级：**<19 无 SAF**（`[选择]` 改为提示走私有导入目录）、**<16 无 `finishAffinity`**（回退 `finish()`）。
+- **Android 2.3 只覆盖 ARMv7 设备**：NDK 25 已不提供 ARMv6/ARMv5（`armeabi`）目标，早期 ARMv6 手机无法支持。
+- 签名同时含 v1（JAR，供 <24 使用）与 v2/v3。
+- 交付：构建后把 APK 复制到手机 `Download/` 目录，不自动安装。
 ## 版本规范
 
 `VERSION` 文件是唯一版本源，构建脚本注入 APK 的 `versionName` 与 `versionCode`：
