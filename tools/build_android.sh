@@ -22,7 +22,7 @@ case "$TARGET" in
   *) echo "用法: $0 [app|verify]" >&2; exit 1 ;;
 esac
 
-API="${ANDROID_API:-26}"
+API="${ANDROID_API:-21}"
 ABI="${ANDROID_ABI:-arm64-v8a}"
 case "$ABI" in
   arm64-v8a)   TRIPLE=aarch64-linux-android ;;

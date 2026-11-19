@@ -37,6 +37,7 @@ enum {
 /* 组件注册表：所有可交互组件都在此登记（唯一 id）。
  * 渲染配色与命中判定**都查这张表**，不做文本模式匹配。 */
 #define RF_COMP_MAX 64
+#define RF_TOC_MAX 1024      /* 目录条目上限（647 章的书也放得下） */
 #define RF_BAND_TOP   0
 #define RF_BAND_BODY  1
 #define RF_BAND_BTN   2
@@ -91,13 +92,13 @@ struct RfApp {
     int sel_hit_arg;                        /* 命中组件的 arg（目录条目下标等） */
     int last_act;                           /* 调试：最近一次派发的动作 */
     int toc_n;                              /* 目录：标题条目数（扁平，文件顺序） */
-    int toc_src[256];                       /* 条目所在的源行号（1-based，实时算出） */
+    int toc_src[RF_TOC_MAX];                       /* 条目所在的源行号（1-based，实时算出） */
     u32 read_crc[512];                      /* 已读标题的 CRC 集合（文件只持久化这个） */
     int read_n;
-    u16 toc_fg[256];                        /* 条目颜色（正在读橙/已读灰/未读白） */
+    u16 toc_fg[RF_TOC_MAX];                        /* 条目颜色（正在读橙/已读灰/未读白） */
     u64 toc_cur_line;                       /* 进目录前的阅读行（用于判定"正在读"章节） */
-    u64 toc_line[256];
-    char toc_txt[256][120];
+    u64 toc_line[RF_TOC_MAX];
+    char toc_txt[RF_TOC_MAX][120];
     u8  toc_seen[32];                       /* 每章 1 bit：曾经到达过（已读） */
     int toc_dirty;
     int imp_n;                              /* 导入页面：可导入文件数 */
@@ -453,8 +454,9 @@ static int scan_import_dir(RfApp *a)
     if (!d) { a->imp_n = 0; return 0; }
     while ((de = readdir(d)) != NULL && n < 64) {
         size_t l = strlen(de->d_name);
-        if (l < 4 || l >= sizeof a->imp_name[0]) continue;
-        if (strcasecmp(de->d_name + l - 4, ".txt") != 0) continue;
+        if (l < 5 || l >= sizeof a->imp_name[0]) continue;
+        if (strcasecmp(de->d_name + l - 4, ".txt") != 0 &&
+            strcasecmp(de->d_name + l - 5, ".ezbk") != 0) continue;
         snprintf(a->imp_name[n], sizeof a->imp_name[0], "%s", de->d_name);
         n++;
     }
@@ -498,7 +500,7 @@ static void build_toc(RfApp *a)
 {
     u64 i = 0, line = 1;
     a->toc_n = 0;
-    while (i < a->data_len && a->toc_n < 256) {
+    while (i < a->data_len && a->toc_n < RF_TOC_MAX) {
         u64 e = i;
         while (e < a->data_len && a->data[e] != '\n') e++;
         if (e > i && a->data[i] == '#' && (e - i) < 120) {
@@ -528,7 +530,7 @@ static void load_toc(RfApp *a, const char *id)
     if (!f) return;
     while (fgets(line, sizeof line, f)) {
         ln++;
-        if (ln >= 7 && a->toc_n < 256) {                 /* 第 7 行起为目录条目 */
+        if (ln >= 7 && a->toc_n < RF_TOC_MAX) {                 /* 第 7 行起为目录条目 */
             char *sp = strchr(line, ' ');
             size_t n;
             if (!sp) break;
@@ -1247,14 +1249,9 @@ static void do_action(RfApp *a, int act)
         stack_pop(a);
         return;
     case ACT_IMPORT: {                           /* 进入导入页面（私有导入目录 + 复选） */
-        static int first = 1;
+        int k;
         scan_import_dir(a);
-        {   /* 进导入页默认全选：首次进入、或上次没勾任何项时 */
-            int k, any = 0;
-            (void)first;
-            for (k = 0; k < a->imp_n; k++) if (a->imp_checked[k]) any = 1;
-            if (!any) for (k = 0; k < a->imp_n; k++) a->imp_checked[k] = 1;
-        }
+        for (k = 0; k < a->imp_n; k++) a->imp_checked[k] = 1;   /* 进页默认全选，可逐个取消 */
         stack_push(a, RF_BOOK_IMPORT);
         return;
     }
@@ -1503,6 +1500,12 @@ const char *rf_app_dialog_text(const RfApp *a) { return a->dlg; }
 int rf_app_last_action(const RfApp *a) { return a->last_act; }
 int rf_app_toc_count(const RfApp *a) { return a->toc_n; }
 int rf_app_book_count(const RfApp *a) { return a->nbooks; }
+const char *rf_app_book_title(const RfApp *a, int i)
+{
+    if (i < 0 || i >= a->nbooks) return "";
+    return a->books[i].title;
+}
+int rf_app_imp_count(const RfApp *a) { return a->imp_n; }
 int rf_app_cur_line(const RfApp *a) { return (int)a->line; }
 int rf_app_first_row_line(const RfApp *a)
 {

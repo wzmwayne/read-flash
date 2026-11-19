@@ -265,6 +265,14 @@ u64  rf_index_locate(const RfIndex *ix, const u8 *data, u64 off_hint, u64 line);
 int  rf_progress_save(RfStore *st, const char *id, u64 line, u64 off, u64 total);
 int  rf_progress_load(RfStore *st, const char *id, u64 *line, u64 *off);
 
+/* ---------------- ezbk 单文件（v0.2 stable） ---------------- */
+/* 判断是否为 ezbk 单文件（EZBK/1，允许 UTF-8 BOM）。 */
+int  rf_ezbk_is(const u8 *data, u64 len);
+/* 把 ezbk 转成应用内部文本（"# 卷" / "## 章" / "---" / 去 \ 前缀）。
+ * title/writer 可为 NULL；成功返回 1，*out 由调用方 free。 */
+int  rf_ezbk_to_text(const u8 *in, u64 len, u8 **out, u64 *out_len,
+                     char *title, size_t title_cap, char *writer, size_t writer_cap);
+
 /* ---------------- 应用（书树 + 渲染 + 触摸） ---------------- */
 #define RF_BOOK_LIBRARY  0
 #define RF_BOOK_READER   1
@@ -295,7 +303,9 @@ int    rf_app_rows_valid(const RfApp *a);
 int    rf_app_comp_dups(const RfApp *a);
 int    rf_app_last_action(const RfApp *a);   /* 调试：最近派发的动作 */
 int    rf_app_toc_count(const RfApp *a);
-int    rf_app_book_count(const RfApp *a);     /* 调试/自检：目录条目数 */
+int    rf_app_book_count(const RfApp *a);
+const char *rf_app_book_title(const RfApp *a, int i);
+int    rf_app_imp_count(const RfApp *a);     /* 调试/自检：目录条目数 */
 int    rf_app_cur_line(const RfApp *a);      /* 调试/自检：当前阅读行 */
 int    rf_app_first_row_line(const RfApp *a);/* 调试/自检：当前页首渲染行的源行号 */
 u64    rf_app_toc_line(const RfApp *a, int i);/* 调试/自检：目录第 i 条的行号 */

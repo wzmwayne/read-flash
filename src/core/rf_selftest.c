@@ -7,6 +7,7 @@
 #include "rf.h"
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define DOC_CAP   (6u * 1024u * 1024u)
@@ -492,6 +493,46 @@ int rf_selftest(char *out, size_t outsz)
         if (g2.fp > g2.rh) fail(&r, "标题: 1× 字形高于 1 个行容器");
         rp(&r, "标题占行: # 1 行+自动空行, ## 1 行+自动空行, ### 1 行（无空行）, 失败 %d\n",
            r.fails - bad0);
+    }
+
+    /* ezbk 单文件转换（v0.2 stable）：卷/章/分隔/正文前缀/指令/元数据 */
+    {
+        static const char *EZ =
+            "\xEF\xBB\xBF" "EZBK/1\n"      /* 分开写：\xBFE 会被当成一个 hex 转义 */
+            "@title 演示书\n"
+            "@writer 测试作者\n"
+            "@intro 第一行\\n第二行\n"
+            "##第一章 初见\n"
+            "\\这是第一段。\n"
+            "\\<br/>换行后的行\n"
+            "@image base64:image/png:AAAA\n"
+            "\\# 正文里的井号\n"
+            "---\n"
+            "#第二卷 远行\n"
+            "## 第二章 夜谈\n"
+            "\\第二章正文。\n";
+        u8 *out = NULL;
+        u64 olen = 0;
+        char t[160], w[160];
+        int ok0 = r.fails;
+        if (!rf_ezbk_is((const u8 *)EZ, strlen(EZ))) fail(&r, "ezbk: is() 未识别带 BOM 的文件");
+        if (!rf_ezbk_to_text((const u8 *)EZ, strlen(EZ), &out, &olen, t, sizeof t, w, sizeof w))
+            fail(&r, "ezbk: 转换失败");
+        else {
+            if (strcmp(t, "演示书") != 0) fail(&r, "ezbk: @title 提取错 [%s]", t);
+            if (strcmp(w, "测试作者") != 0) fail(&r, "ezbk: @writer 提取错 [%s]", w);
+            if (!strstr((char *)out, "## 第一章 初见")) fail(&r, "ezbk: 章标题未归一化为 '## 标题'");
+            if (!strstr((char *)out, "# 第二卷 远行")) fail(&r, "ezbk: 卷标题未归一化");
+            if (!strstr((char *)out, "这是第一段。")) fail(&r, "ezbk: 正文未去掉 '\\' 前缀");
+            if (!strstr((char *)out, "换行后的行")) fail(&r, "ezbk: <br/> 未还原为换行");
+            if (strstr((char *)out, "@image")) fail(&r, "ezbk: @image 未被替换");
+            if (!strstr((char *)out, "[图片]")) fail(&r, "ezbk: @image 未输出占位");
+            if (!strstr((char *)out, "# 正文里的井号")) fail(&r, "ezbk: 转义井号未还原");
+            if (!strstr((char *)out, "---")) fail(&r, "ezbk: 分隔符丢失");
+            if (!strstr((char *)out, "第二章正文。")) fail(&r, "ezbk: 第二章正文丢失");
+            free(out);
+        }
+        rp(&r, "ezbk 转换: 元数据/卷章归一化/去前缀/<br>/@image, 失败 %d\n", r.fails - ok0);
     }
 
     rp(&r, "边界: \n");

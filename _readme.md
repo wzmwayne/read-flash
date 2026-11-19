@@ -1,6 +1,6 @@
 # Read-Flash
 
-**终端风格、书页模型的极简纯文本阅读器** —— 面向极低端设备与跨平台场景。
+**终端风格、书页模型的极简纯文本阅读器** —— 面向极低端安卓设备。**主力平台 Android（minSdk 21 / Android 5.0），不再维护 iOS；Linux 宿主验证工具保留。**
 纯 TXT + 极简语法（标题 / 换页符），黑底终端观感，翻页即保存，一切皆书。
 
 > **当前状态**：规范冻结（v3.4.2）+ 核心算法已验证 + **正式应用可运行**（书库 / 阅读 / 设置 / 调试 / 内置教程 / 提示框，安卓外壳 + C 应用层）。
@@ -16,7 +16,7 @@
 | 单行 5MB（无 `\n`） | PASS —— 2974 页连续覆盖（v3.3 的 `canPrev` 判定在此场景会失效，v3.4 已修正） |
 | 边界用例 | PASS —— 空文件 / 单换行 / 无尾换行 / 仅换页符 / 双换页符 / 三档标题 / CRLF / 全角标点 |
 | 跨进程确定性 | PASS —— GLOBAL 哈希一致 |
-| 安卓 APK | PASS —— `build/readflash-verify.apk`，arm64-v8a，29 KB，minSdk 26 / targetSdk 34，v2+v3 签名 |
+| 安卓 APK | PASS —— `build/readflash-verify.apk`，arm64-v8a，29 KB，minSdk 21 / targetSdk 34，v2+v3 签名 |
 
 ## 文档
 
@@ -60,10 +60,14 @@ docs/            规范与评审文档
 ```bash
 ./tools/build_android.sh app      # 正式应用 → build/readflash.apk
 ./tools/build_android.sh verify   # 最小验证 → build/readflash-verify.apk
-adb install -r build/readflash.apk
+# 不自动安装：把 APK 复制到手机 Download/ 目录即可
 ```
 
-导入方式：把 .txt 放进 `Android/data/com.readflash.app/files/import/`，在书库点 `[导入]`。
+交付方式：构建后只把 APK **复制到手机 Download 目录**，在设备上自行安装（不自动安装）。
+
+导入方式：把 **.txt 或 .ezbk** 放进 `Android/data/com.readflash.app/files/import/`，在书库点 `[导入]`。
+
+**ezbk 单文件（v0.2 stable）**：`EZBK/1` + `@key value` 头部 + 反斜杠开头的正文行；导入时自动转成内部文本（`#` 卷、`##` 章、`---` 换页、去掉行首一个反斜杠、`<br/>` 还原换行、`@image` 记作 `[图片]`），书名取 `@title`、作者取 `@writer`。图片与封面不解析。
 调试可用 Shizuku 的 rish（本仓库开发约定：只安装/调试本应用，不改系统设置、不操作其它应用）。
 
 脚本会逐工具探测（aapt2 / d8 / apksigner / zipalign / NDK clang），自动跳过宿主机无法执行的
@@ -82,14 +86,6 @@ adb install -r build/readflash.apk
 ```
 **判定顺序**：先看是否动了结构（改小版本），再看是否只是定义/语义或小修（改 `d` 后那位）。
 当前版本见 [VERSION](VERSION)（versionCode = 大*10000 + 小*100 + 次*10 + 修订位）。
-
-## iOS
-
-iOS 外壳见 [ios/README.md](ios/README.md)：C 核心与安卓完全共用，iOS 侧只提供 PAL——
-`Library/Application Support/ReadFlash` 存数据、`Documents/import` 作导入目录（配合
-`UIFileSharingEnabled` 会在"文件 → 我的 iPhone → Read-Flash"里可见），
-`[选择]` 走 `UIDocumentPickerViewController`，字形用 CoreText 光栅化。
-**注意：iOS 部分未在本机（Linux，无 Xcode）编译或测试。**
 
 ## 网页转换器（GitHub Pages）
 
@@ -115,7 +111,7 @@ iOS 外壳见 [ios/README.md](ios/README.md)：C 核心与安卓完全共用，i
 2. ⬜ 索引（自适应 K + CRC32 自校验）与 `.rfidx` / `.rfprog` / `.config` 落盘
 3. ⬜ 阅读界面（顶栏 + 正文 + 底栏 2 行）、书库（单选 + `[打开][删除][导入]`）、设置（字号/行距/四向边距 + 预览）、内置《应用使用教程》
 4. ⬜ 提示框书（确定/取消，返回=取消）、调试书（重建索引 / 重置进度）
-5. ⬜ PAL 落地（Android NDK / iOS），字体选型（OFL）
+5. ⬜ PAL 落地（Android NDK），字体选型（OFL）
 
 ## 许可
 

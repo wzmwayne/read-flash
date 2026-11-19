@@ -422,7 +422,7 @@ static size_t put_hex_raw(char *b, size_t off, u64 v, int digits)
 
 /* 写 <id>/.config：书名 / S / 全文 CRC / L / 目录条目数 T / 目录 / CRC */
 static int config_write(const RfStore *st, const char *id, const u8 *data, u64 len,
-                        const char *src_path, u32 h)
+                        const char *src_path, const char *title_override, u32 h)
 {
     char path[700], title[160];
     char *cfg;
@@ -430,16 +430,27 @@ static int config_write(const RfStore *st, const char *id, const u8 *data, u64 l
     const char *base = strrchr(src_path, '/');
     u64 L = rf_count_lines(data, len), entries = 0, i, line_no;
 
-    base = base ? base + 1 : src_path;
-    tlen = strlen(base);
-    dot = tlen;
-    while (dot > 0 && base[dot - 1] != '.') dot--;
-    if (dot > 0) dot--;
-    if (dot == 0) dot = tlen;
-    if (dot >= sizeof title) dot = sizeof title - 1;
-    memcpy(title, base, dot);
-    title[dot] = 0;
-    tlen = dot;
+    if (title_override && *title_override) {                    /* ezbk @title 优先 */
+        size_t k = 0;
+        while (title_override[k] && k < sizeof title - 1) {
+            char c = title_override[k];
+            title[k] = (c == '\n' || c == '\r') ? ' ' : c;
+            k++;
+        }
+        title[k] = 0;
+        tlen = k;
+    } else {
+        base = base ? base + 1 : src_path;
+        tlen = strlen(base);
+        dot = tlen;
+        while (dot > 0 && base[dot - 1] != '.') dot--;
+        if (dot > 0) dot--;
+        if (dot == 0) dot = tlen;
+        if (dot >= sizeof title) dot = sizeof title - 1;
+        memcpy(title, base, dot);
+        title[dot] = 0;
+        tlen = dot;
+    }
 
     for (i = 0, line_no = 1; i < len && entries < 256; ) {      /* 统计目录条目 */
         u64 e = i;
@@ -460,12 +471,13 @@ static int config_write(const RfStore *st, const char *id, const u8 *data, u64 l
     coff = put_hex(cfg, coff, (u64)h, 8);
     coff = put_hex(cfg, coff, L, 16);
     coff = put_hex(cfg, coff, entries, 8);
-    for (i = 0, line_no = 1; i < len; ) {                        /* 目录：`#` 标题 */
+    for (i = 0, line_no = 1, entries = 0; i < len && entries < 256; ) {  /* 目录：`#` 标题（与计数同上限） */
         u64 e = i;
         while (e < len && data[e] != '\n') e++;
         if (e > i && data[i] == '#' && (e - i) < 120) {
             coff = put_hex_raw(cfg, coff, line_no, 16);
             cfg[coff++] = ' ';
+            entries++;
             memcpy(cfg + coff, data + i, (size_t)(e - i));
             coff += (size_t)(e - i);
             cfg[coff++] = '\n';
@@ -486,12 +498,30 @@ int rf_book_import(RfStore *st, const char *src_path, char *out_id, size_t cap)
     u64 len = 0;
     u32 h;
     char id[16], dir[700], dst[700];
+    const char *title_override = NULL;
+    char ezt[160];                                      /* ezbk @title（调用期内有效） */
     int seq;
     static u64 storage[RF_MAX_INDEX];
     RfIndex ix;
 
     data = read_file(src_path, &len);
     if (!data) return -1;
+
+    {   /* ezbk 单文件：先转成应用内部文本（标题取 @title） */
+        ezt[0] = 0;
+        if (rf_ezbk_is(data, len)) {
+            u8 *txt = NULL;
+            u64 tlen = 0;
+            if (!rf_ezbk_to_text(data, len, &txt, &tlen, ezt, sizeof ezt, NULL, 0)) {
+                free(data);
+                return -1;
+            }
+            free(data);
+            data = txt;
+            len = tlen;
+        }
+        title_override = ezt[0] ? ezt : NULL;
+    }
     h = rf_crc32(data, (size_t)len);
 
     memset(id, 0, sizeof id);
@@ -510,7 +540,7 @@ int rf_book_import(RfStore *st, const char *src_path, char *out_id, size_t cap)
 
     book_path(dst, sizeof dst, st, id, "book");
     if (write_atomic(dst, data, (size_t)len) != 0) { free(data); return -1; }
-    if (config_write(st, id, data, len, src_path, h) != 0) { free(data); return -1; }
+    if (config_write(st, id, data, len, src_path, title_override, h) != 0) { free(data); return -1; }
     if (rf_index_build(st, id, data, len, &ix, storage, 1) != 0) { free(data); return -1; }
 
     free(data);

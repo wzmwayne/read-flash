@@ -206,10 +206,26 @@ int main(void)
 
     {   /* 多章节语料：目录会超过一页，用于验证目录翻页后的颜色/条目 */
         system("cp -f /tmp/testbook.txt '/tmp/rfapp/import/原神：具现之魔神.txt'");
+        system("cp -f ~/date/neobook/bin/neodata/books/pdftest.ezbk /tmp/rfapp/import/");
+        tap_back(a);                         /* 先回书库：阅读器底栏没有 [导入] */
         tap_bar(a, 2);                       /* [导入] → 导入页 */
+        printf("  点击[导入]后 书=%d 动作=%d 文件数=%d\n", rf_app_book_id(a), rf_app_last_action(a), rf_app_imp_count(a));
         tap_bar(a, 1);                       /* [导入这些] */
+        printf("  点击[导入这些]后 书=%d 动作=%d\n", rf_app_book_id(a), rf_app_last_action(a));
         tap_bar(a, 0);                       /* 结果提示框 [确定] */
-        printf("  导入 many.txt 后书数=%d\n", rf_app_book_count(a));
+        printf("  点击[确定]后 书=%d 动作=%d\n", rf_app_book_id(a), rf_app_last_action(a));
+        printf("  导入后书数=%d\n", rf_app_book_count(a));
+        {   /* ezbk 单文件：书名应来自 @title，而不是文件名 */
+            int k, hit = 0;
+            for (k = 0; k < rf_app_book_count(a); k++) {
+                const char *t = rf_app_book_title(a, k);
+                if (strstr(t, "PDF")) hit = 1;
+                printf("    书%d: %s\n", k, t);
+            }
+            printf("  判定: ezbk 导入并取 @title=%d\n", hit);
+        }
+        tap_body_row(a, 2);                  /* 回到阅读器，供后面的翻页/目录检查使用 */
+        tap_bar(a, 0);
     }
 
     /* 5.5) 翻页行点击：左右键必须真的翻页（此前被 enabled 缓存卡死） */
@@ -251,6 +267,9 @@ int main(void)
     {
         int sw, sh, wc, rh, cols, rows, bx, by, bary;
         int b0, b1, b2;
+        { int k; for (k = 0; k < 4 && rf_app_book_id(a) != 0; k++) tap_back(a); }   /* 出栈到书库 */
+        tap_body_row(a, 4);                         /* 第 2 项 = sample */
+        tap_bar(a, 0);
         rf_app_metrics(a, &sw, &sh, &wc, &rh, &cols, &rows, &bx, &by, &bary);
         b0 = rf_app_book_id(a);
         tap_bar(a, 0);                              /* 阅读底栏 [目录]（第 0 个按钮） */
